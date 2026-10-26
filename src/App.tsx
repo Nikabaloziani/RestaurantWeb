@@ -1,7 +1,13 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Bell, Menu, ShieldCheck, LogOut } from "lucide-react";
+import {
+  Bell,
+  Menu,
+  ShieldCheck,
+  LogOut,
+  ArrowLeft,
+} from "lucide-react";
 
 import Sidebar from "./components/Sidebar";
 import LanguageSwitcher from "./components/LanguageSwitcher";
@@ -14,8 +20,10 @@ import Products from "./pages/Products";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
+import LandingPage from "./pages/LandingPage";
 
 import type { Page } from "./types";
+
 import {
   authenticate,
   isJwtExpired,
@@ -29,12 +37,12 @@ type Session = {
 
 const SESSION_KEY = "restaurantos_dev_session";
 
-// Restoring sessions is enabled only for local development.
 function loadSavedSession(): Session | null {
   if (!import.meta.env.DEV) return null;
 
   try {
     const saved = sessionStorage.getItem(SESSION_KEY);
+
     if (!saved) return null;
 
     const parsed: unknown = JSON.parse(saved);
@@ -81,13 +89,16 @@ function clearSavedSession() {
   try {
     sessionStorage.removeItem(SESSION_KEY);
   } catch {
-    // Storage may be unavailable.
+    console.warn("Could not clear saved session.");
   }
 }
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
+
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const [showLanding, setShowLanding] = useState(true);
 
   const [session, setSession] = useState<Session | null>(
     loadSavedSession
@@ -100,28 +111,63 @@ export default function App() {
       i18n.resolvedLanguage ?? "ka";
   }, [i18n.resolvedLanguage]);
 
-  // Real login through ASP.NET Core.
   const handleLogin = async (
     email: string,
     password: string
   ) => {
-    const authenticated = await authenticate(email, password);
+    const authenticated = await authenticate(
+      email,
+      password
+    );
 
     saveSession(authenticated);
+
     setSession(authenticated);
     setPage("dashboard");
+    setMobileOpen(false);
+    setShowLanding(false);
   };
 
-  // Clear the current browser session.
   const handleLogout = () => {
     clearSavedSession();
+
     setSession(null);
     setPage("dashboard");
     setMobileOpen(false);
+    setShowLanding(true);
   };
 
+  const handleShowLogin = () => {
+    setShowLanding(false);
+  };
+
+  const handleBackToLanding = () => {
+    setShowLanding(true);
+  };
+
+  if (!session && showLanding) {
+    return (
+      <LandingPage
+        onSignIn={handleShowLogin}
+      />
+    );
+  }
+
   if (!session) {
-    return <Login onLogin={handleLogin} />;
+    return (
+      <>
+        <button
+          type="button"
+          onClick={handleBackToLanding}
+          className="fixed left-4 top-4 z-50 flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+        >
+          <ArrowLeft size={17} />
+          Back to Home
+        </button>
+
+        <Login onLogin={handleLogin} />
+      </>
+    );
   }
 
   const renderPage = () => {
@@ -173,7 +219,6 @@ export default function App() {
 
       <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-30 flex h-18.75 items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-4 backdrop-blur-sm sm:px-6 lg:px-9">
-
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
@@ -215,7 +260,8 @@ export default function App() {
 
             <div className="hidden lg:block">
               <div className="max-w-40 truncate text-xs font-bold text-slate-800">
-                {session.user.firstName || session.user.email}
+                {session.user.firstName ||
+                  session.user.email}
               </div>
 
               <div className="text-[11px] text-slate-500">
