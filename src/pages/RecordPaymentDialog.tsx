@@ -5,9 +5,10 @@ import type { LiveOrder } from '../api/orders';
 import { getOrderForPayment, getPaymentForOrder, recordManualPayment } from '../api/payments';
 
 export default function RecordPaymentDialog({
-  token, order, onClose, onPaid,
+  token, restaurantId, order, onClose, onPaid,
 }: {
   token: string;
+  restaurantId: string;
   order: LiveOrder;
   onClose: () => void;
   onPaid: (id: number) => void;
@@ -28,8 +29,8 @@ export default function RecordPaymentDialog({
     setBlockReason(null);
     setError(null);
     void Promise.all([
-      getOrderForPayment(token, order.id, controller.signal),
-      getPaymentForOrder(token, order.id, controller.signal),
+      getOrderForPayment(token, restaurantId, order.id, controller.signal),
+      getPaymentForOrder(token, restaurantId, order.id, controller.signal),
     ]).then(([fresh, payment]) => {
       if (controller.signal.aborted) return;
       if (payment?.status === 'completed') {
@@ -49,7 +50,7 @@ export default function RecordPaymentDialog({
       if (!controller.signal.aborted) setChecking(false);
     });
     return () => controller.abort();
-  }, [order.id, token, t]);
+  }, [order.id, token, restaurantId, t]);
 
   const pay = async () => {
     if (sending || checking || blockReason || uncertain || !confirmed || serverAmount === null) return;
@@ -57,7 +58,7 @@ export default function RecordPaymentDialog({
     setError(null);
     setSending(true);
     try {
-      const payment = await recordManualPayment(token, order.id, serverAmount, method);
+      const payment = await recordManualPayment(token, restaurantId, order.id, serverAmount, method);
       onPaid(payment.orderId);
     } catch (e) {
       // Server might have committed even if the response was lost.

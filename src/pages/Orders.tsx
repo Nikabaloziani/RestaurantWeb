@@ -20,7 +20,12 @@ const STATUSES = Object.keys(ORDER_STATUS_CODES) as EditableOrderStatus[];
 const EDITABLE_STATUSES = STATUSES.filter(value => value !== 'paid');
 const formatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
 
-export default function Orders({ token }: { token: string }) {
+type OrdersProps = {
+  token: string;
+  restaurantId: string;
+};
+
+export default function Orders({ token, restaurantId }: OrdersProps) {
   const { t, i18n } = useTranslation();
   const [orders, setOrders] = useState<LiveOrder[]>([]);
   const [creating, setCreating] = useState(false);
@@ -36,6 +41,16 @@ export default function Orders({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const hasRestaurant = restaurantId.trim().length > 0;
+
+  useEffect(() => {
+    setCreating(false);
+    setPayingOrder(null);
+    setDrafts({});
+    setNotice(null);
+    setStatus('all');
+    setSearch('');
+  }, [restaurantId]);
 
   // Do not keep old data visible following a failed refresh.
   useEffect(() => {
@@ -43,7 +58,12 @@ export default function Orders({ token }: { token: string }) {
     setLoading(true);
     setError(null);
     setOrders([]);
-    void fetchOrders(token, controller.signal)
+    setDrafts({});
+    if (!hasRestaurant) {
+      setLoading(false);
+      return () => controller.abort();
+    }
+    void fetchOrders(token, restaurantId, controller.signal)
       .then(data => {
         if (controller.signal.aborted) return;
         setOrders(data);
@@ -56,25 +76,29 @@ export default function Orders({ token }: { token: string }) {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [token, reload]);
+  }, [token, restaurantId, hasRestaurant, reload]);
 
   useEffect(() => {
     const controller = new AbortController();
     setPaymentLoading(true);
     setPaymentError(null);
     setPayments(null);
-    void fetchPaymentRecords(token, controller.signal)
+    if (!hasRestaurant) {
+      setPaymentLoading(false);
+      return () => controller.abort();
+    }
+    void fetchPaymentRecords(token, restaurantId, controller.signal)
       .then(rows => { if (!controller.signal.aborted) setPayments(rows); })
       .catch(err => { if (!controller.signal.aborted) setPaymentError(err instanceof Error ? err.message : String(err)); })
       .finally(() => { if (!controller.signal.aborted) setPaymentLoading(false); });
     return () => controller.abort();
-  }, [token, reload]);
+  }, [token, restaurantId, hasRestaurant, reload]);
 
   const refresh = useCallback(() => {
-    if (savingId !== null) return;
+    if (savingId !== null || !hasRestaurant) return;
     setNotice(null);
     setReload(value => value + 1);
-  }, [savingId]);
+  }, [savingId, hasRestaurant]);
 
   const localizedError = (message: string) => {
     if (message.startsWith('orders.errorHttp:')) {
@@ -90,6 +114,7 @@ export default function Orders({ token }: { token: string }) {
   ).sort((a, b) => (Date.parse(b.orderDate) || 0) - (Date.parse(a.orderDate) || 0)), [orders, status, search]);
 
   const save = async (order: LiveOrder) => {
+    if (!hasRestaurant) return;
     const nextStatus = drafts[order.id] ?? (order.status === 'unknown' ? 'pending' : order.status);
     if (order.status === 'cancelled' || order.status === 'paid' || order.status === 'unknown' || nextStatus === 'paid') return;
     if (order.status === nextStatus) return;
@@ -98,7 +123,7 @@ export default function Orders({ token }: { token: string }) {
     setNotice(null);
     setSavingId(order.id);
     try {
-      await changeOrderStatus(token, order.id, nextStatus);
+      await changeOrderStatus(token, restaurantId, order.id, nextStatus);
       setNotice(t('orders.updated', { id: order.id }));
       setReload(value => value + 1); // Read the actual saved value back from PostgreSQL.
     } catch (err) {
@@ -117,13 +142,14 @@ export default function Orders({ token }: { token: string }) {
   };
 
   return <div>
+    {!hasRestaurant && <p role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Select a restaurant before managing orders.</p>}
     <PageHeader title={t('orders.title')} subtitle={t('orders.subtitle')}
       action={<div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => setCreating(true)} disabled={savingId !== null}
+        <button type="button" onClick={() => setCreating(true)} disabled={savingId !== null || !hasRestaurant}
           className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-40">
           <Plus size={17}/>{t('basket.newOrder')}
         </button>
-        <button type="button" onClick={refresh} disabled={loading || savingId !== null}
+        <button type="button" onClick={refresh} disabled={loading || savingId !== null || !hasRestaurant}
         className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
         <RefreshCw size={17} className={loading ? 'animate-spin' : ''}/>{t('orders.refresh')}
       </button></div>} />
@@ -182,7 +208,7 @@ export default function Orders({ token }: { token: string }) {
                 className="min-w-[125px] rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs outline-none focus:border-blue-400">
                 {EDITABLE_STATUSES.map(item => <option key={item} value={item}>{t(`statuses.${item}`)}</option>)}
               </select>
-              <button type="button" onClick={() => void save(order)} disabled={savingId !== null || next === order.status}
+              <button type="button" onClick={() => void save(order)} disabled={!hasRestaurant || savingId !== null || next === order.status}
                 className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">
                 {isSaving ? t('orders.saving') : t('orders.save')}
               </button>
@@ -191,7 +217,7 @@ export default function Orders({ token }: { token: string }) {
               ? <span className="text-xs font-bold text-emerald-700">{t('payments.recorded')} #{completedPayment.id}</span>
               : order.status === 'paid' ? <span className="text-xs font-semibold text-amber-700">{t('payments.unverified')}</span>
               : order.status === 'cancelled' || order.status === 'unknown' ? <span className="text-xs text-slate-400">—</span>
-              : <button type="button" disabled={savingId !== null || paymentLoading || payments === null || order.totalAmount <= 0}
+              : <button type="button" disabled={!hasRestaurant || savingId !== null || paymentLoading || payments === null || order.totalAmount <= 0}
                   onClick={() => setPayingOrder(order)}
                   className="inline-flex items-center gap-1 rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-40">
                   <CreditCard size={14}/>{t('payments.record')}
@@ -201,12 +227,12 @@ export default function Orders({ token }: { token: string }) {
       </table></div> : null}
     </section>
     <p className="mt-3 text-xs text-slate-500">{t('orders.tableIdNote')}</p>
-    {payingOrder && <RecordPaymentDialog token={token} order={payingOrder} onClose={() => setPayingOrder(null)} onPaid={id => {
+    {payingOrder && <RecordPaymentDialog token={token} restaurantId={restaurantId} order={payingOrder} onClose={() => setPayingOrder(null)} onPaid={id => {
       setPayingOrder(null);
       setNotice(t('payments.success', { id }));
       setReload(value => value + 1);
     }}/>} 
-    {creating && <CreateOrderDialog token={token} onClose={() => setCreating(false)} onCreated={orderId => {
+    {creating && hasRestaurant && <CreateOrderDialog token={token} restaurantId={restaurantId} onClose={() => setCreating(false)} onCreated={orderId => {
       setCreating(false);
       setStatus('all');
       setSearch('');

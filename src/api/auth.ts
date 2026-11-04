@@ -17,7 +17,7 @@ type LoginResult = {
 };
 
 function getApiUrl(path: string): string {
-  // Local development goes through the Vite proxy.
+  // Development uses the Vite /api proxy.
   if (import.meta.env.DEV) {
     return path;
   }
@@ -49,10 +49,15 @@ function decodeJwtClaims(
     "="
   );
 
-  return JSON.parse(atob(padded)) as Record<string, unknown>;
+  return JSON.parse(atob(padded)) as Record<
+    string,
+    unknown
+  >;
 }
 
-export function isJwtExpired(token: string): boolean {
+export function isJwtExpired(
+  token: string
+): boolean {
   try {
     const claims = decodeJwtClaims(token);
 
@@ -77,7 +82,9 @@ function getIdFromJwt(token: string): string {
     claims.sub;
 
   if (typeof id !== "string" || !id) {
-    throw new Error("Could not find user ID in JWT token.");
+    throw new Error(
+      "Could not find user ID in JWT token."
+    );
   }
 
   return id;
@@ -87,8 +94,7 @@ export async function authenticate(
   email: string,
   password: string
 ): Promise<{ token: string; user: AuthUser }> {
-
-  // Step 1: Login
+  // STEP 1: Authenticate credentials.
   const response = await fetch(
     getApiUrl("/api/Auth/login"),
     {
@@ -96,13 +102,18 @@ export async function authenticate(
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({
+        email,
+        password,
+      }),
     }
   );
 
   if (!response.ok) {
     if (response.status === 401) {
-      throw new Error("Invalid email or password.");
+      throw new Error(
+        "Invalid email or password."
+      );
     }
 
     throw new Error(
@@ -110,22 +121,29 @@ export async function authenticate(
     );
   }
 
-  const result = (await response.json()) as LoginResult;
+  const result =
+    (await response.json()) as LoginResult;
 
   if (!result.isSuccess || !result.token) {
-    throw new Error(result.message || "Login failed.");
+    throw new Error(
+      result.message || "Login failed."
+    );
   }
 
   if (isJwtExpired(result.token)) {
-    throw new Error("The server returned an expired token.");
+    throw new Error(
+      "The server returned an expired token."
+    );
   }
 
-  // Step 2: Get current user using the SAME API.
+  const userId = getIdFromJwt(result.token);
+
+  // STEP 2: Load the authenticated account.
   const headers = {
     Authorization: `Bearer ${result.token}`,
   };
 
-  const me = await fetch(
+  let me = await fetch(
     getApiUrl("/api/Auth/me"),
     {
       method: "GET",
@@ -134,45 +152,54 @@ export async function authenticate(
     }
   );
 
-  let user: AuthUser;
-
-  if (me.ok) {
-    user = (await me.json()) as AuthUser;
-  } else if (me.status === 404 && import.meta.env.DEV) {
-    const userId = getIdFromJwt(result.token);
-
-    const legacy = await fetch(
+  // Backward compatibility for local development.
+  if (me.status === 404 && import.meta.env.DEV) {
+    me = await fetch(
       getApiUrl(
         `/api/Auth/users/${encodeURIComponent(userId)}`
       ),
       {
+        method: "GET",
         headers,
         cache: "no-store",
       }
     );
+  }
 
-    if (!legacy.ok) {
-      throw new Error(
-        `Could not load user profile (${legacy.status}).`
-      );
-    }
-
-    user = (await legacy.json()) as AuthUser;
-  } else {
+  if (!me.ok) {
     throw new Error(
       `Could not load account (${me.status}).`
     );
   }
 
-  if (
-    !user ||
-    !Array.isArray(user.roles) ||
-    !user.roles.includes("Admin")
-  ) {
+  const profile =
+    (await me.json()) as Partial<AuthUser>;
+
+  if (!profile || typeof profile !== "object") {
     throw new Error(
-      "Only Admin users can access this dashboard."
+      "Invalid account information."
     );
   }
+
+  if (
+    typeof profile.id === "string" &&
+    profile.id !== userId
+  ) {
+    throw new Error(
+      "Account ID does not match the login token."
+    );
+  }
+
+  const user: AuthUser = {
+    id: userId,
+    firstName: profile.firstName ?? "",
+    lastName: profile.lastName ?? "",
+    userName: profile.userName ?? "",
+    email: profile.email ?? email,
+    roles: Array.isArray(profile.roles)
+      ? profile.roles
+      : [],
+  };
 
   return {
     token: result.token,

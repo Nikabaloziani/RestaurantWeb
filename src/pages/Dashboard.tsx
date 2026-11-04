@@ -7,10 +7,10 @@ import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
 
-export default function Dashboard({ token, onNavigate }: { token: string; onNavigate: (page: Page) => void }) {
+export default function Dashboard({ token, restaurantId, onNavigate }: { token: string; restaurantId: string; onNavigate: (page: Page) => void }) {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage?.startsWith('ka') ? 'ka-GE' : i18n.resolvedLanguage?.startsWith('ru') ? 'ru-RU' : 'en-GB';
-  const { snapshot, loading, refresh } = useInsights(token, true);
+  const { snapshot, loading, refresh } = useInsights(token, true, restaurantId);
   const summary = snapshot?.summary;
   const orders = snapshot?.orders;
   const payments = snapshot?.payments;

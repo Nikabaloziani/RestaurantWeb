@@ -1,6 +1,4 @@
-/** REST contract checked against RestaurantAPI controllers and DTOs.
- * Product API has NO image, product description or availability fields yet.
- */
+/** Tenant-scoped catalog. All endpoints require a selected restaurant GUID. */
 import { apiBaseUrl } from './client';
 
 export type LiveCategory = { id: number; name: string; description: string | null };
@@ -9,7 +7,7 @@ export type LiveProduct = {
   name: string;
   price: number;
   nuts: boolean;
-  vegeterian: boolean; // Intentionally matches the ASP.NET Core DTO property spelling.
+  vegeterian: boolean;
   spiciness: number;
   categoryId: number;
   categoryName: string | null;
@@ -21,9 +19,14 @@ type RawCategory = Record<string, unknown>;
 type RawProduct = Record<string, unknown>;
 
 function apiPrefix(): string {
-  if (import.meta.env.DEV) return ''; // Vite local proxy to Railway backend
+  if (import.meta.env.DEV) return '';
   if (!apiBaseUrl) throw new Error('catalog.errorMissingUrl');
   return apiBaseUrl.replace(/\/+$/, '');
+}
+
+function catalogPath(restaurantId: string, resource: 'categories' | 'products'): string {
+  if (!restaurantId.trim()) throw new Error('Select a restaurant first.');
+  return `/api/restaurants/${encodeURIComponent(restaurantId)}/${resource}`;
 }
 
 async function request(path: string, token: string, options: RequestInit = {}): Promise<Response> {
@@ -96,12 +99,12 @@ async function parseArray<T>(response: Response, parser: (value: unknown) => T):
   return data.map(parser);
 }
 
-export async function fetchCatalog(token: string, signal?: AbortSignal): Promise<{
+export async function fetchCatalog(token: string, restaurantId: string, signal?: AbortSignal): Promise<{
   categories: LiveCategory[]; products: LiveProduct[];
 }> {
   const [categoriesResponse, productsResponse] = await Promise.all([
-    request('/api/Category', token, { signal }),
-    request('/api/Products', token, { signal }),
+    request(catalogPath(restaurantId, 'categories'), token, { signal }),
+    request(catalogPath(restaurantId, 'products'), token, { signal }),
   ]);
   const [categories, products] = await Promise.all([
     parseArray(categoriesResponse, parseCategory),
@@ -113,21 +116,21 @@ export async function fetchCatalog(token: string, signal?: AbortSignal): Promise
   };
 }
 
-export async function createCategory(token: string, data: CategoryInput): Promise<void> {
-  await request('/api/Category', token, { method: 'POST', body: JSON.stringify(data) });
+export async function createCategory(token: string, restaurantId: string, data: CategoryInput): Promise<void> {
+  await request(catalogPath(restaurantId, 'categories'), token, { method: 'POST', body: JSON.stringify(data) });
 }
-export async function updateCategory(token: string, id: number, data: CategoryInput): Promise<void> {
-  await request(`/api/Category/${id}`, token, { method: 'PUT', body: JSON.stringify(data) });
+export async function updateCategory(token: string, restaurantId: string, id: number, data: CategoryInput): Promise<void> {
+  await request(`${catalogPath(restaurantId, 'categories')}/${id}`, token, { method: 'PUT', body: JSON.stringify(data) });
 }
-export async function deleteCategory(token: string, id: number): Promise<void> {
-  await request(`/api/Category/${id}`, token, { method: 'DELETE' });
+export async function deleteCategory(token: string, restaurantId: string, id: number): Promise<void> {
+  await request(`${catalogPath(restaurantId, 'categories')}/${id}`, token, { method: 'DELETE' });
 }
-export async function createProduct(token: string, data: ProductInput): Promise<void> {
-  await request('/api/Products', token, { method: 'POST', body: JSON.stringify(data) });
+export async function createProduct(token: string, restaurantId: string, data: ProductInput): Promise<void> {
+  await request(catalogPath(restaurantId, 'products'), token, { method: 'POST', body: JSON.stringify(data) });
 }
-export async function updateProduct(token: string, id: number, data: ProductInput): Promise<void> {
-  await request('/api/Products', token, { method: 'PUT', body: JSON.stringify({ id, ...data }) });
+export async function updateProduct(token: string, restaurantId: string, id: number, data: ProductInput): Promise<void> {
+  await request(`${catalogPath(restaurantId, 'products')}/${id}`, token, { method: 'PUT', body: JSON.stringify({ id, ...data }) });
 }
-export async function deleteProduct(token: string, id: number): Promise<void> {
-  await request(`/api/Products/${id}`, token, { method: 'DELETE' });
+export async function deleteProduct(token: string, restaurantId: string, id: number): Promise<void> {
+  await request(`${catalogPath(restaurantId, 'products')}/${id}`, token, { method: 'DELETE' });
 }

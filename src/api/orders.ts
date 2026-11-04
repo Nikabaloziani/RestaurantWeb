@@ -43,6 +43,11 @@ const orderStatusByNumber: Record<number, EditableOrderStatus> = {
   4: 'served', 5: 'paid', 6: 'cancelled',
 };
 
+export function orderPath(restaurantId: string): string {
+  if (!restaurantId.trim()) throw new Error('Select a restaurant first.');
+  return `/api/restaurants/${encodeURIComponent(restaurantId)}/orders`;
+}
+
 function getApiPrefix(): string {
   // Local Vite proxy handles /api; production needs backend CORS enabled.
   if (import.meta.env.DEV) return '';
@@ -116,18 +121,18 @@ async function request(path: string, token: string, options: RequestInit = {}): 
   return response;
 }
 
-export async function fetchOrders(token: string, signal?: AbortSignal): Promise<LiveOrder[]> {
-  const response = await request('/api/Orders', token, { signal });
+export async function fetchOrders(token: string, restaurantId: string, signal?: AbortSignal): Promise<LiveOrder[]> {
+  const response = await request(orderPath(restaurantId), token, { signal });
   const result: unknown = await response.json();
   if (!Array.isArray(result)) throw new Error('orders.errorFormat');
   return result.map(item => parseOrder(item as ApiOrder));
 }
 
 export async function changeOrderStatus(
-  token: string, orderId: number, status: EditableOrderStatus,
+  token: string, restaurantId: string, orderId: number, status: EditableOrderStatus,
 ): Promise<void> {
   // ASP.NET Core binds OrderStatus enum numerically unless JsonStringEnumConverter is configured.
-  await request(`/api/Orders/${orderId}/status`, token, {
+  await request(`${orderPath(restaurantId)}/${orderId}/status`, token, {
     method: 'PATCH',
     body: JSON.stringify({ status: ORDER_STATUS_CODES[status] }),
   });

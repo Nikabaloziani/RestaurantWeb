@@ -13,6 +13,7 @@ import {
 type Filter = 'all' | 'upcoming' | 'confirmed' | 'cancelled';
 type ReservationEditorProps = {
   token: string;
+  restaurantId: string;
   existing: LiveReservation | null;
   onClose: () => void;
   onSaved: (id: number, edited: boolean) => void;
@@ -31,7 +32,7 @@ function errorText(message: string, t: TFunction): string {
   return message.startsWith('reservations.') || message.startsWith('tables.') ? t(message) : message;
 }
 
-function ReservationEditor({ token, existing, onClose, onSaved }: ReservationEditorProps) {
+function ReservationEditor({ token, restaurantId, existing, onClose, onSaved }: ReservationEditorProps) {
   const { t } = useTranslation();
   const editing = existing !== null;
   const [startTime, setStartTime] = useState(existing ? localDatetimeValue(existing.startTime) : '');
@@ -53,7 +54,7 @@ function ReservationEditor({ token, existing, onClose, onSaved }: ReservationEdi
   useEffect(() => {
     if (!editing) return;
     const controller = new AbortController();
-    fetchTables(token, controller.signal)
+    fetchTables(token, restaurantId, controller.signal)
       .then((result: LiveTable[]) => {
         if (!controller.signal.aborted) {
           setTables(result.map(table => ({ id: table.id, tableNumber: table.tableNumber, capacity: table.capacity })));
@@ -62,7 +63,7 @@ function ReservationEditor({ token, existing, onClose, onSaved }: ReservationEdi
       .catch(error => { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : String(error)); })
       .finally(() => { if (!controller.signal.aborted) setLoadingEditTables(false); });
     return () => controller.abort();
-  }, [editing, token]);
+  }, [editing, token, restaurantId]);
 
   const invalidateAvailability = () => {
     if (!editing) {
@@ -94,7 +95,7 @@ function ReservationEditor({ token, existing, onClose, onSaved }: ReservationEdi
     setTables([]);
     setTableId('');
     try {
-      const result = await fetchAvailableReservationTables(token, new Date(startTime).toISOString(), Number(guestCount), Number(durationMinutes));
+      const result = await fetchAvailableReservationTables(token, restaurantId, new Date(startTime).toISOString(), Number(guestCount), Number(durationMinutes));
       setTables(result);
       setChecked(true);
     } catch (err) {
@@ -127,8 +128,8 @@ function ReservationEditor({ token, existing, onClose, onSaved }: ReservationEdi
     setError(null);
     try {
       const saved = existing
-        ? await updateReservation(token, existing.id, input)
-        : await createReservation(token, input);
+        ? await updateReservation(token, restaurantId, existing.id, input)
+        : await createReservation(token, restaurantId, input);
       onSaved(saved.id, editing);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'reservations.errorNetwork');
@@ -212,7 +213,7 @@ function ReservationEditor({ token, existing, onClose, onSaved }: ReservationEdi
   </div>;
 }
 
-export default function Reservations({ token }: { token: string }) {
+export default function Reservations({ token, restaurantId }: { token: string; restaurantId: string }) {
   const { t, i18n } = useTranslation();
   const [reservations, setReservations] = useState<LiveReservation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -228,12 +229,14 @@ export default function Reservations({ token }: { token: string }) {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    fetchReservations(token, controller.signal)
+    setReservations([]);
+    setEditor(null);
+    fetchReservations(token, restaurantId, controller.signal)
       .then(data => { if (!controller.signal.aborted) setReservations(data); })
       .catch(err => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'reservations.errorNetwork'); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [token, reload]);
+  }, [token, restaurantId, reload]);
 
   const refresh = useCallback(() => {
     if (cancellingId !== null) return;
@@ -270,7 +273,7 @@ export default function Reservations({ token }: { token: string }) {
     setError(null);
     setNotice(null);
     try {
-      await cancelReservation(token, reservation.id);
+      await cancelReservation(token, restaurantId, reservation.id);
       setNotice(t('reservations.cancelSuccess', { id: reservation.id }));
       setReload(n => n + 1);
     } catch (err) {
@@ -351,7 +354,7 @@ export default function Reservations({ token }: { token: string }) {
     </section>
     <p className="mt-3 text-xs text-slate-500">{t('reservations.footerNote')}</p>
 
-    {editor && <ReservationEditor token={token} existing={editor.existing} onClose={() => setEditor(null)} onSaved={(id, edited) => {
+    {editor && <ReservationEditor token={token} restaurantId={restaurantId} existing={editor.existing} onClose={() => setEditor(null)} onSaved={(id, edited) => {
       setEditor(null);
       setNotice(t(edited ? 'reservations.updateSuccess' : 'reservations.createSuccess', { id }));
       setReload(n => n + 1);

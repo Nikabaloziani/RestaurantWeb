@@ -6,11 +6,11 @@ import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import { formatGel, makePeriod, useInsights, type RangeDays } from '../api/insights';
 
-export default function Analytics({ token }: { token: string }) {
+export default function Analytics({ token, restaurantId }: { token: string; restaurantId: string }) {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage?.startsWith('ka') ? 'ka-GE' : i18n.resolvedLanguage?.startsWith('ru') ? 'ru-RU' : 'en-GB';
   const [days, setDays] = useState<RangeDays>(7);
-  const { snapshot, loading, refresh } = useInsights(token);
+  const { snapshot, loading, refresh } = useInsights(token, false, restaurantId);
   const price = (amount: number) => formatGel(amount, locale);
   // Memoize the period boundary on each render; changing range or refreshing recalculates.
   const bounds = useMemo(() => {

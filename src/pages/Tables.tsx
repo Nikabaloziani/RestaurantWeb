@@ -84,7 +84,14 @@ function TableEditor({ initial, busy, onCancel, onSave, numbers, errorMessage }:
   </div>;
 }
 
-export default function Tables({ token }: { token: string }) {
+export default function Tables({
+  token,
+  restaurantId,
+}: {
+  token: string;
+  restaurantId: string;
+}) {
+
   const { t } = useTranslation();
   const [tables, setTables] = useState<LiveTable[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,16 +105,23 @@ export default function Tables({ token }: { token: string }) {
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!restaurantId) {
+      setTables([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
     setLoading(true);
     setTables([]);
     setError(null);
-    void fetchTables(token, controller.signal)
+    void fetchTables(token, restaurantId, controller.signal)
       .then(rows => { if (!controller.signal.aborted) setTables(rows); })
       .catch(err => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'tables.errorNetwork'); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [token, reload]);
+  }, [token, restaurantId, reload]);
 
   const errorText = (message: string) => {
     if (message.startsWith('tables.errorHttp:')) return t('tables.errorHttp', { status: message.split(':')[1] });
@@ -123,31 +137,30 @@ export default function Tables({ token }: { token: string }) {
   const refresh = () => { if (!saving && busyId === null) { setNotice(null); setReload(n => n + 1); } };
 
   const save = async (value: TableInput) => {
-    if (!editor) return;
+    if (!editor || !restaurantId) return;
     setSaving(true); setError(null); setNotice(null);
     try {
       if (editor === 'new') {
-        await createTable(token, value);
+        await createTable(token, restaurantId, value);
         setNotice(t('tables.created'));
       } else {
-        await updateTable(token, editor.id, value);
+        await updateTable(token, restaurantId, editor.id, value);
         setNotice(t('tables.saved'));
       }
       setEditor(null);
       setReload(n => n + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'tables.errorNetwork');
-      // Keep the form open so the user can retry/cancel.
     } finally { setSaving(false); }
   };
 
   const occupancy = async (row: LiveTable) => {
-    if (row.isOccupied === null || row.status === 'reserved') return;
+    if (!restaurantId || row.isOccupied === null || row.status === 'reserved') return;
     const next = !row.isOccupied;
     if (!window.confirm(t('tables.confirmOccupancy', { number: row.tableNumber, status: t(`statuses.${next ? 'occupied' : 'available'}`) }))) return;
     setBusyId(row.id); setError(null); setNotice(null);
     try {
-      await updateTableOccupancy(token, row.id, next);
+      await updateTableOccupancy(token, restaurantId, row.id, next);
       setNotice(t('tables.statusSaved', { number: row.tableNumber }));
       setReload(n => n + 1);
     } catch (err) {
@@ -156,10 +169,11 @@ export default function Tables({ token }: { token: string }) {
   };
 
   const remove = async (row: LiveTable) => {
+    if (!restaurantId) return;
     if (!window.confirm(t('tables.confirmDelete', { number: row.tableNumber }))) return;
     setBusyId(row.id); setError(null); setNotice(null);
     try {
-      await deleteTable(token, row.id);
+      await deleteTable(token, restaurantId, row.id);
       setNotice(t('tables.deleted', { number: row.tableNumber }));
       setReload(n => n + 1);
     } catch (err) {
@@ -169,11 +183,11 @@ export default function Tables({ token }: { token: string }) {
 
   return <div>
     <PageHeader title={t('tables.title')} subtitle={t('tables.subtitle')} action={<div className="flex flex-wrap gap-2">
-      <button type="button" onClick={refresh} disabled={loading || busyId !== null || saving}
+      <button type="button" onClick={refresh} disabled={!restaurantId || loading || busyId !== null || saving}
         className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
         <RefreshCw size={17} className={loading ? 'animate-spin' : ''}/>{t('tables.refresh')}
       </button>
-      <button type="button" onClick={() => { setError(null); setEditor('new'); }} disabled={loading || busyId !== null || saving}
+      <button type="button" onClick={() => { setError(null); setEditor('new'); }} disabled={!restaurantId || loading || busyId !== null || saving}
         className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">
         <Plus size={17}/>{t('tables.addTable')}
       </button>
@@ -209,7 +223,8 @@ export default function Tables({ token }: { token: string }) {
       </div>
     </div>
 
-    {loading ? <div className="flex items-center justify-center gap-2 rounded-xl bg-white p-12 text-sm text-slate-500"><Loader2 size={21} className="animate-spin"/>{t('tables.loading')}</div>
+    {!restaurantId ? <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-500">Select a restaurant to manage tables.</div>
+      : loading ? <div className="flex items-center justify-center gap-2 rounded-xl bg-white p-12 text-sm text-slate-500"><Loader2 size={21} className="animate-spin"/>{t('tables.loading')}</div>
       : !error && filtered.length === 0 ? <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-sm text-slate-500">{tables.length === 0 ? t('tables.empty') : t('common.noResults')}</div>
       : !error ? <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{filtered.map(row => {
         const working = busyId === row.id;

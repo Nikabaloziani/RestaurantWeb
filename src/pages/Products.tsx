@@ -144,7 +144,7 @@ function ProductDialog({ original, categories, busy, onClose, onSave }: {
   </div>;
 }
 
-export default function Products({ token }: { token: string }) {
+export default function Products({ token, restaurantId }: { token: string; restaurantId: string }) {
   const { t, i18n } = useTranslation();
   const [categories, setCategories] = useState<LiveCategory[]>([]);
   const [products, setProducts] = useState<LiveProduct[]>([]);
@@ -162,12 +162,22 @@ export default function Products({ token }: { token: string }) {
     const controller = new AbortController();
     setLoading(true);
     setError('');
-    void fetchCatalog(token, controller.signal)
+    setProducts([]);
+    setCategories([]);
+    setCategoryFilter('all');
+    setEditor(null);
+    setNotice('');
+    if (!restaurantId.trim()) {
+      setError('Select a restaurant first.');
+      setLoading(false);
+      return () => controller.abort();
+    }
+    void fetchCatalog(token, restaurantId, controller.signal)
       .then(data => { if (!controller.signal.aborted) { setCategories(data.categories); setProducts(data.products); } })
       .catch(err => { if (!controller.signal.aborted) setError(translateError(t, err)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [token, reload, t]);
+  }, [token, restaurantId, reload, t]);
 
   const filteredProducts = useMemo(() => products.filter(p =>
     (categoryFilter === 'all' || String(p.categoryId) === categoryFilter) &&
@@ -181,7 +191,7 @@ export default function Products({ token }: { token: string }) {
   }).format(value);
 
   async function reloadCatalog() {
-    const data = await fetchCatalog(token);
+    const data = await fetchCatalog(token, restaurantId);
     setCategories(data.categories);
     setProducts(data.products);
   }
@@ -190,8 +200,8 @@ export default function Products({ token }: { token: string }) {
     if (!editor || editor.kind !== 'product') return;
     setSaving(true); setError(''); setNotice('');
     try {
-      if (editor.value) await updateProduct(token, editor.value.id, data);
-      else await createProduct(token, data);
+      if (editor.value) await updateProduct(token, restaurantId, editor.value.id, data);
+      else await createProduct(token, restaurantId, data);
       await reloadCatalog();
       setNotice(t(editor.value ? 'catalog.productUpdated' : 'catalog.productCreated'));
       setEditor(null);
@@ -203,8 +213,8 @@ export default function Products({ token }: { token: string }) {
     if (!editor || editor.kind !== 'category') return;
     setSaving(true); setError(''); setNotice('');
     try {
-      if (editor.value) await updateCategory(token, editor.value.id, data);
-      else await createCategory(token, data);
+      if (editor.value) await updateCategory(token, restaurantId, editor.value.id, data);
+      else await createCategory(token, restaurantId, data);
       await reloadCatalog();
       setNotice(t(editor.value ? 'catalog.categoryUpdated' : 'catalog.categoryCreated'));
       setEditor(null);
@@ -216,7 +226,7 @@ export default function Products({ token }: { token: string }) {
     if (!window.confirm(t('catalog.confirmDeleteProduct', { name: product.name }))) return;
     setSaving(true); setError(''); setNotice('');
     try {
-      await deleteProduct(token, product.id);
+      await deleteProduct(token, restaurantId, product.id);
       await reloadCatalog();
       setNotice(t('catalog.productDeleted'));
     } catch (err) { setError(translateError(t, err)); }
@@ -230,7 +240,7 @@ export default function Products({ token }: { token: string }) {
     if (!window.confirm(t('catalog.confirmDeleteCategory', { name: category.name }))) return;
     setSaving(true); setError(''); setNotice('');
     try {
-      await deleteCategory(token, category.id);
+      await deleteCategory(token, restaurantId, category.id);
       await reloadCatalog();
       setNotice(t('catalog.categoryDeleted'));
     } catch (err) { setError(translateError(t, err)); }

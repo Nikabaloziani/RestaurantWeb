@@ -2,6 +2,7 @@
  * Requires the patched backend. Never treats this as an online card charge.
  */
 import { apiBaseUrl } from './client';
+import { orderPath } from './orders';
 
 export type PaymentRecord = {
   id: number;
@@ -11,6 +12,11 @@ export type PaymentRecord = {
   status: 'completed' | 'pending' | 'failed' | 'unknown';
   paymentDate: string;
 };
+
+export function paymentPath(restaurantId: string): string {
+  if (!restaurantId.trim()) throw new Error('Select a restaurant first.');
+  return `/api/restaurants/${encodeURIComponent(restaurantId)}/payments`;
+}
 
 function apiRoot(): string {
   if (import.meta.env.DEV) return '';
@@ -47,8 +53,8 @@ function parsePayment(value: unknown): PaymentRecord {
   };
 }
 
-export async function fetchPaymentRecords(token: string, signal?: AbortSignal): Promise<PaymentRecord[]> {
-  const response = await request('/api/Payments', token, { signal });
+export async function fetchPaymentRecords(token: string, restaurantId: string, signal?: AbortSignal): Promise<PaymentRecord[]> {
+  const response = await request(paymentPath(restaurantId), token, { signal });
   if (!response.ok) throw new Error(`Payments API: HTTP ${response.status}`);
   const payload: unknown = await response.json();
   if (!Array.isArray(payload)) throw new Error('Invalid payments list response');
@@ -56,9 +62,9 @@ export async function fetchPaymentRecords(token: string, signal?: AbortSignal): 
 }
 
 export async function getPaymentForOrder(
-  token: string, orderId: number, signal?: AbortSignal,
+  token: string, restaurantId: string, orderId: number, signal?: AbortSignal,
 ): Promise<PaymentRecord | null> {
-  const response = await request(`/api/Payments/order/${orderId}`, token, { signal });
+  const response = await request(`${paymentPath(restaurantId)}/order/${orderId}`, token, { signal });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Payment check failed: HTTP ${response.status}`);
   return parsePayment(await response.json());
@@ -66,9 +72,9 @@ export async function getPaymentForOrder(
 
 export type OrderPaymentCheck = { id: number; status: string; totalAmount: number };
 export async function getOrderForPayment(
-  token: string, orderId: number, signal?: AbortSignal,
+  token: string, restaurantId: string, orderId: number, signal?: AbortSignal,
 ): Promise<OrderPaymentCheck> {
-  const response = await request(`/api/Orders/${orderId}`, token, { signal });
+  const response = await request(`${orderPath(restaurantId)}/${orderId}`, token, { signal });
   if (!response.ok) throw new Error(`Order check failed: HTTP ${response.status}`);
   const payload: unknown = await response.json();
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid order response');
@@ -79,10 +85,10 @@ export async function getOrderForPayment(
 }
 
 export async function recordManualPayment(
-  token: string, orderId: number, amount: number, method: 'cash' | 'card',
+  token: string, restaurantId: string, orderId: number, amount: number, method: 'cash' | 'card',
 ): Promise<PaymentRecord> {
   // Cash=1 and Card=2 in RestaurantDATA.Entities.PaymentMethod.
-  const response = await request('/api/Payments', token, {
+  const response = await request(paymentPath(restaurantId), token, {
     method: 'POST',
     body: JSON.stringify({ orderId, amount, method: method === 'cash' ? 1 : 2 }),
   });

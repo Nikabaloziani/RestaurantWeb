@@ -36,6 +36,11 @@ export type InsightSnapshot = {
   errors: Partial<Record<InsightKey, string>>;
 };
 
+function tenantPath(restaurantId: string, resource: 'reports' | 'payments'): string {
+  if (!restaurantId.trim()) throw new Error('Select a restaurant first.');
+  return `/api/restaurants/${encodeURIComponent(restaurantId)}/${resource}`;
+}
+
 function prefix(): string {
   if (import.meta.env.DEV) return '';
   if (!apiBaseUrl) throw new Error('VITE_API_URL is missing');
@@ -74,8 +79,8 @@ function numeric(value: unknown): number {
   return value;
 }
 
-async function fetchSummary(token: string, signal: AbortSignal): Promise<ReportSummary> {
-  const data = record(await getJson('/api/Reports/summary', token, signal));
+async function fetchSummary(token: string, restaurantId: string, signal: AbortSignal): Promise<ReportSummary> {
+  const data = record(await getJson(`${tenantPath(restaurantId, 'reports')}/summary`, token, signal));
   return {
     totalRevenue: numeric(data.totalRevenue),
     totalOrders: numeric(data.totalOrders),
@@ -84,8 +89,8 @@ async function fetchSummary(token: string, signal: AbortSignal): Promise<ReportS
   };
 }
 
-async function fetchTopProducts(token: string, signal: AbortSignal): Promise<TopProduct[]> {
-  const data = await getJson('/api/Reports/top-products?count=5', token, signal);
+async function fetchTopProducts(token: string, restaurantId: string, signal: AbortSignal): Promise<TopProduct[]> {
+  const data = await getJson(`${tenantPath(restaurantId, 'reports')}/top-products?count=5`, token, signal);
   if (!Array.isArray(data)) throw new Error('Unexpected top-products response');
   return data.map((value: unknown) => {
     const row = record(value);
@@ -104,8 +109,8 @@ function statusOf(value: unknown): LivePayment['status'] {
   if (value === 3 || (typeof value === 'string' && /^(3|failed)$/i.test(value))) return 'failed';
   return 'unknown';
 }
-async function fetchPayments(token: string, signal: AbortSignal): Promise<LivePayment[]> {
-  const data = await getJson('/api/Payments', token, signal);
+async function fetchPayments(token: string, restaurantId: string, signal: AbortSignal): Promise<LivePayment[]> {
+  const data = await getJson(tenantPath(restaurantId, 'payments'), token, signal);
   if (!Array.isArray(data)) throw new Error('Unexpected payments response');
   return data.map((value: unknown) => {
     const row = record(value);
@@ -122,7 +127,7 @@ async function fetchPayments(token: string, signal: AbortSignal): Promise<LivePa
   });
 }
 
-export function useInsights(token: string, withTables = false) {
+export function useInsights(token: string, withTables = false, restaurantId = '') {
   const [revision, setRevision] = useState(0);
   const [snapshot, setSnapshot] = useState<InsightSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -133,13 +138,22 @@ export function useInsights(token: string, withTables = false) {
     setLoading(true);
     setSnapshot(null);
 
+    if (!restaurantId.trim()) {
+      setSnapshot({
+        summary: null, orders: null, payments: null, topProducts: null, tables: null,
+        errors: { summary: 'Select a restaurant first.' },
+      });
+      setLoading(false);
+      return () => controller.abort();
+    }
+
     const tasks: Array<[InsightKey, Promise<unknown>]> = [
-      ['summary', fetchSummary(token, signal)],
-      ['orders', fetchOrders(token, signal)],
-      ['payments', fetchPayments(token, signal)],
-      ['topProducts', fetchTopProducts(token, signal)],
+      ['summary', fetchSummary(token, restaurantId, signal)],
+      ['orders', fetchOrders(token, restaurantId, signal)],
+      ['payments', fetchPayments(token, restaurantId, signal)],
+      ['topProducts', fetchTopProducts(token, restaurantId, signal)],
     ];
-    if (withTables) tasks.push(['tables', fetchTables(token, signal)]);
+    if (withTables) tasks.push(['tables', fetchTables(token, restaurantId, signal)]);
 
     void Promise.allSettled(tasks.map(([, task]) => task)).then(results => {
       if (signal.aborted) return;
@@ -163,7 +177,7 @@ export function useInsights(token: string, withTables = false) {
       setLoading(false);
     });
     return () => controller.abort();
-  }, [token, withTables, revision]);
+  }, [token, withTables, restaurantId, revision]);
 
   return { snapshot, loading, refresh: () => setRevision(value => value + 1) };
 }

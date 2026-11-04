@@ -41,6 +41,11 @@ export type AvailableTable = {
 
 type RawReservation = Record<string, unknown>;
 
+function tenantBase(restaurantId: string): string {
+  if (!restaurantId.trim()) throw new Error('Select a restaurant first.');
+  return `/api/restaurants/${encodeURIComponent(restaurantId)}/reservations`;
+}
+
 function prefix(): string {
   if (import.meta.env.DEV) return '';
   if (!apiBaseUrl) throw new Error('reservations.errorMissingUrl');
@@ -119,33 +124,33 @@ async function request(path: string, token: string, options: RequestInit = {}): 
   return response;
 }
 
-export async function fetchReservations(token: string, signal?: AbortSignal): Promise<LiveReservation[]> {
-  const response = await request('/api/Reservations', token, { signal });
+export async function fetchReservations(token: string, restaurantId: string, signal?: AbortSignal): Promise<LiveReservation[]> {
+  const response = await request(tenantBase(restaurantId), token, { signal });
   const data: unknown = await response.json();
   if (!Array.isArray(data)) throw new Error('reservations.errorFormat');
   return data.map(parseReservation).sort((a, b) => Date.parse(b.startTime) - Date.parse(a.startTime));
 }
 
 /** Uses backend collision/capacity checks. It returns only tables for the requested time slot. */
-export async function fetchAvailableReservationTables(token: string, startTime: string, guestCount: number, durationMinutes: number): Promise<AvailableTable[]> {
+export async function fetchAvailableReservationTables(token: string, restaurantId: string, startTime: string, guestCount: number, durationMinutes: number): Promise<AvailableTable[]> {
   const params = new URLSearchParams({ startTime, guestCount: String(guestCount), durationMinutes: String(durationMinutes) });
-  const response = await request(`/api/Reservations/available?${params.toString()}`, token);
+  const response = await request(`${tenantBase(restaurantId)}/available?${params.toString()}`, token);
   const data: unknown = await response.json();
   if (!Array.isArray(data)) throw new Error('reservations.errorFormat');
   return data.map(parseTable).sort((a, b) => a.tableNumber - b.tableNumber);
 }
 
-export async function createReservation(token: string, input: ReservationInput): Promise<LiveReservation> {
-  const response = await request('/api/Reservations', token, { method: 'POST', body: JSON.stringify(input) });
+export async function createReservation(token: string, restaurantId: string, input: ReservationInput): Promise<LiveReservation> {
+  const response = await request(tenantBase(restaurantId), token, { method: 'POST', body: JSON.stringify(input) });
   return parseReservation(await response.json());
 }
 
-export async function updateReservation(token: string, id: number, input: ReservationInput): Promise<LiveReservation> {
-  const response = await request(`/api/Reservations/${id}`, token, { method: 'PUT', body: JSON.stringify(input) });
+export async function updateReservation(token: string, restaurantId: string, id: number, input: ReservationInput): Promise<LiveReservation> {
+  const response = await request(`${tenantBase(restaurantId)}/${id}`, token, { method: 'PUT', body: JSON.stringify(input) });
   return parseReservation(await response.json());
 }
 
-export async function cancelReservation(token: string, id: number): Promise<LiveReservation> {
-  const response = await request(`/api/Reservations/${id}/cancel`, token, { method: 'PATCH' });
+export async function cancelReservation(token: string, restaurantId: string, id: number): Promise<LiveReservation> {
+  const response = await request(`${tenantBase(restaurantId)}/${id}/cancel`, token, { method: 'PATCH' });
   return parseReservation(await response.json());
 }

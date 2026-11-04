@@ -6,12 +6,22 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
 
- server: {
+//  server: {
+//   proxy: {
+//     "/api": {
+//       target: "https://restaurantapi-production-e850.up.railway.app",
+//       changeOrigin: true,
+//       secure: true,
+//     },
+//   },
+// },
+
+
+server: {
   proxy: {
     "/api": {
-      target: "https://restaurantapi-production-e850.up.railway.app",
+      target: "http://localhost:5109",
       changeOrigin: true,
-      secure: true,
     },
   },
 },

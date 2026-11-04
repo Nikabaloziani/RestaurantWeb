@@ -1,5 +1,5 @@
 /** Live REST contract: RestaurantAPI/BasketController, OrdersController.
- * Basket is scoped to the logged-in user, NOT a particular table.
+ * Basket is scoped by restaurant and logged-in user (via each product).
  */
 import { apiBaseUrl } from './client';
 
@@ -11,6 +11,11 @@ export type BasketItem = {
   quantity: number;
   totalPrice: number;
 };
+
+function tenantPath(restaurantId: string, resource: 'basket' | 'orders'): string {
+  if (!restaurantId.trim()) throw new Error('Select a restaurant first.');
+  return `/api/restaurants/${encodeURIComponent(restaurantId)}/${resource}`;
+}
 
 const apiPrefix = (): string => {
   if (import.meta.env.DEV) return '';
@@ -68,43 +73,43 @@ function parseBasketItem(value: unknown): BasketItem {
   };
 }
 
-export async function fetchBasket(token: string, signal?: AbortSignal): Promise<BasketItem[]> {
-  const response = await callApi('/api/Basket', token, { signal });
+export async function fetchBasket(token: string, restaurantId: string, signal?: AbortSignal): Promise<BasketItem[]> {
+  const response = await callApi(tenantPath(restaurantId, 'basket'), token, { signal });
   const value: unknown = await response.json();
   if (!Array.isArray(value)) throw new Error('basket.errorFormat');
   return value.map(parseBasketItem).sort((a, b) => a.id - b.id);
 }
 
-export async function addBasketItem(token: string, productId: number, quantity = 1): Promise<void> {
+export async function addBasketItem(token: string, restaurantId: string, productId: number, quantity = 1): Promise<void> {
   if (!Number.isInteger(productId) || productId < 1 || !Number.isInteger(quantity) || quantity < 1 || quantity > 100)
     throw new Error('basket.errorQuantity');
-  await callApi('/api/Basket', token, {
+  await callApi(tenantPath(restaurantId, 'basket'), token, {
     method: 'POST', body: JSON.stringify({ productId, quantity }),
   });
 }
 
-export async function changeBasketQuantity(token: string, basketItemId: number, quantity: number): Promise<void> {
+export async function changeBasketQuantity(token: string, restaurantId: string, basketItemId: number, quantity: number): Promise<void> {
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) throw new Error('basket.errorQuantity');
-  await callApi(`/api/Basket/${basketItemId}`, token, {
+  await callApi(`${tenantPath(restaurantId, 'basket')}/${basketItemId}`, token, {
     method: 'PUT', body: JSON.stringify({ quantity }),
   });
 }
 
-export async function removeBasketItem(token: string, basketItemId: number): Promise<void> {
-  await callApi(`/api/Basket/${basketItemId}`, token, { method: 'DELETE' });
+export async function removeBasketItem(token: string, restaurantId: string, basketItemId: number): Promise<void> {
+  await callApi(`${tenantPath(restaurantId, 'basket')}/${basketItemId}`, token, { method: 'DELETE' });
 }
 
-export async function clearBasket(token: string): Promise<void> {
+export async function clearBasket(token: string, restaurantId: string): Promise<void> {
   // Explicit clearing is destructive; only invoked after user confirms.
-  await callApi('/api/Basket/clear', token, { method: 'DELETE' });
+  await callApi(`${tenantPath(restaurantId, 'basket')}/clear`, token, { method: 'DELETE' });
 }
 
-/** OrderService creates the order from ALL current basket items, then clears the user's basket.
+/** OrderService creates the order from this restaurant's basket items and clears only those.
  * On a lost/failed response, creation MAY have succeeded: never auto-retry POST.
  */
-export async function placeBasketOrder(token: string, tableId: number): Promise<number> {
+export async function placeBasketOrder(token: string, restaurantId: string, tableId: number): Promise<number> {
   if (!Number.isInteger(tableId) || tableId <= 0) throw new Error('basket.errorSelectTable');
-  const response = await callApi('/api/Orders', token, {
+  const response = await callApi(tenantPath(restaurantId, 'orders'), token, {
     method: 'POST', body: JSON.stringify({ tableId }),
   });
   const value: unknown = await response.json();

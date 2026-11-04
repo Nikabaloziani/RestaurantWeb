@@ -1,34 +1,43 @@
-
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Bell,
   Menu,
-  ShieldCheck,
+  ShieldAlert,
   LogOut,
   ArrowLeft,
 } from "lucide-react";
 
 import Sidebar from "./components/Sidebar";
 import LanguageSwitcher from "./components/LanguageSwitcher";
+import RestaurantSwitcher from "./components/RestaurantSwitcher";
 
 import Dashboard from "./pages/Dashboard";
+import OperationalDashboard from "./pages/OperationalDashboard";
 import Orders from "./pages/Orders";
 import Tables from "./pages/Tables";
 import Reservations from "./pages/Reservations";
 import Products from "./pages/Products";
 import Analytics from "./pages/Analytics";
+import Staff from "./pages/Staff";
 import Settings from "./pages/Settings";
+import BillingSettings from "./pages/BillingSettings";
 import Login from "./pages/Login";
 import LandingPage from "./pages/LandingPage";
 
 import type { Page } from "./types";
+import { canOpenPage, localizedRestaurantRole, restaurantRoleOf } from "./auth/restaurantAccess";
 
 import {
   authenticate,
   isJwtExpired,
   type AuthUser,
 } from "./api/auth";
+
+import {
+  getMyRestaurants,
+  type RestaurantSummary,
+} from "./api/restaurants";
 
 type Session = {
   token: string;
@@ -47,7 +56,10 @@ function loadSavedSession(): Session | null {
 
     const parsed: unknown = JSON.parse(saved);
 
-    if (typeof parsed !== "object" || parsed === null) {
+    if (
+      typeof parsed !== "object" ||
+      parsed === null
+    ) {
       sessionStorage.removeItem(SESSION_KEY);
       return null;
     }
@@ -59,7 +71,6 @@ function loadSavedSession(): Session | null {
       typeof data.user !== "object" ||
       data.user === null ||
       !Array.isArray(data.user.roles) ||
-      !data.user.roles.includes("Admin") ||
       isJwtExpired(data.token)
     ) {
       sessionStorage.removeItem(SESSION_KEY);
@@ -104,12 +115,110 @@ export default function App() {
     loadSavedSession
   );
 
+  const [restaurants, setRestaurants] = useState<
+    RestaurantSummary[]
+  >([]);
+
+  const [
+    selectedRestaurantId,
+    setSelectedRestaurantId,
+  ] = useState("");
+
+  const [
+    restaurantsLoading,
+    setRestaurantsLoading,
+  ] = useState(false);
+
+  const [
+    restaurantsError,
+    setRestaurantsError,
+  ] = useState<string | null>(null);
+
+  const [
+    restaurantsReloadKey,
+    setRestaurantsReloadKey,
+  ] = useState(0);
+
   const { t, i18n } = useTranslation();
+
+  const token = session?.token;
+
+  const selectedRestaurant = restaurants.find(
+    (restaurant) =>
+      restaurant.id === selectedRestaurantId &&
+      restaurant.isActive
+  );
+
+  // Role comes from restaurant membership, NOT the global Identity Admin role.
+  const restaurantRole = restaurantRoleOf(selectedRestaurant?.role);
+  const roleLabel = localizedRestaurantRole(restaurantRole, i18n.resolvedLanguage ?? i18n.language ?? 'en');
+  const activePage = canOpenPage(restaurantRole, page) ? page : 'dashboard';
+  const handleNavigate = (nextPage: Page) => {
+    if (canOpenPage(restaurantRole, nextPage)) setPage(nextPage);
+  };
 
   useEffect(() => {
     document.documentElement.lang =
       i18n.resolvedLanguage ?? "ka";
   }, [i18n.resolvedLanguage]);
+
+  useEffect(() => {
+    if (!token) {
+      setRestaurants([]);
+      setSelectedRestaurantId("");
+      setRestaurantsLoading(false);
+      setRestaurantsError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    setRestaurantsLoading(true);
+    setRestaurantsError(null);
+
+    getMyRestaurants(token, controller.signal)
+      .then((items) => {
+        if (controller.signal.aborted) return;
+
+        setRestaurants(items);
+
+        setSelectedRestaurantId((currentId) => {
+          const activeRestaurants = items.filter(
+            (restaurant) => restaurant.isActive
+          );
+
+          const currentIsValid = activeRestaurants.some(
+            (restaurant) =>
+              restaurant.id === currentId
+          );
+
+          if (currentIsValid) {
+            return currentId;
+          }
+
+          return activeRestaurants[0]?.id ?? "";
+        });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+
+        setRestaurants([]);
+        setSelectedRestaurantId("");
+
+        setRestaurantsError(
+          error instanceof Error
+            ? error.message
+            : "Could not load restaurants."
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setRestaurantsLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [token, restaurantsReloadKey]);
 
   const handleLogin = async (
     email: string,
@@ -135,20 +244,36 @@ export default function App() {
     setPage("dashboard");
     setMobileOpen(false);
     setShowLanding(true);
+
+    setRestaurants([]);
+    setSelectedRestaurantId("");
+    setRestaurantsError(null);
   };
 
-  const handleShowLogin = () => {
-    setShowLanding(false);
+  const handleRestaurantChange = (
+    restaurantId: string
+  ) => {
+    const restaurant = restaurants.find(
+      (item) =>
+        item.id === restaurantId &&
+        item.isActive
+    );
+
+    if (!restaurant) return;
+
+    setSelectedRestaurantId(restaurant.id);
+    setPage("dashboard");
+    setMobileOpen(false);
   };
 
-  const handleBackToLanding = () => {
-    setShowLanding(true);
+  const handleReloadRestaurants = () => {
+    setRestaurantsReloadKey((current) => current + 1);
   };
 
   if (!session && showLanding) {
     return (
       <LandingPage
-        onSignIn={handleShowLogin}
+        onSignIn={() => setShowLanding(false)}
       />
     );
   }
@@ -158,7 +283,7 @@ export default function App() {
       <>
         <button
           type="button"
-          onClick={handleBackToLanding}
+          onClick={() => setShowLanding(true)}
           className="fixed left-4 top-4 z-50 flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
         >
           <ArrowLeft size={17} />
@@ -170,51 +295,136 @@ export default function App() {
     );
   }
 
+
+  if (!selectedRestaurantId) {
+    return (
+      <div className="rounded-xl border bg-white p-6 text-center">
+        <h2 className="text-lg font-semibold">
+          Select a restaurant
+        </h2>
+        <p className="mt-2 text-sm text-slate-500">
+          {restaurantsLoading ? 'Checking restaurant access…' : restaurantsError ?? 'Ask the restaurant owner for an invitation, then refresh.'}
+        </p>
+        <div className="mt-4 flex justify-center gap-2">
+          <button type="button" onClick={handleReloadRestaurants}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Refresh</button>
+          <button type="button" onClick={handleLogout}
+            className="rounded-lg border px-4 py-2 text-sm font-medium">Sign out</button>
+        </div>
+      </div>
+    );
+  }
+
   const renderPage = () => {
-    switch (page) {
+    switch (activePage) {
       case "dashboard":
+        // Staff never mounts the financial Dashboard/useInsights component.
+        if (restaurantRole === 'waiter' || restaurantRole === 'cashier') {
+          return (
+            <OperationalDashboard
+              key={selectedRestaurantId}
+              token={session.token}
+              restaurantId={selectedRestaurantId}
+              role={restaurantRole}
+              onNavigate={handleNavigate}
+            />
+          );
+        }
+        if (restaurantRole !== 'owner' && restaurantRole !== 'manager') {
+          return <div className="rounded-xl border bg-white p-5">You do not have an assigned restaurant role.</div>;
+        }
         return (
           <Dashboard
+            key={selectedRestaurantId}
             token={session.token}
-            onNavigate={setPage}
+            restaurantId={selectedRestaurantId}
+            onNavigate={handleNavigate}
           />
         );
+
+
+
 
       case "orders":
-        return <Orders token={session.token} />;
-
-      case "tables":
-        return <Tables token={session.token} />;
-
-      case "reservations":
-        return <Reservations token={session.token} />;
-
-      case "products":
-        return <Products token={session.token} />;
-
-      case "analytics":
-        return <Analytics token={session.token} />;
-
-      case "settings":
-        return <Settings />;
-
-      default:
         return (
-          <Dashboard
+          <Orders
+            key={selectedRestaurantId}
             token={session.token}
-            onNavigate={setPage}
+            restaurantId={selectedRestaurantId}
           />
         );
+
+
+      case "tables":
+        return (
+          <Tables
+            key={selectedRestaurantId}
+            token={session.token}
+            restaurantId={selectedRestaurantId}
+          />
+        );
+
+
+      case "reservations":
+        return (
+          <Reservations
+            key={selectedRestaurantId}
+            token={session.token}
+            restaurantId={selectedRestaurantId}
+          />
+        );
+
+
+      case "products":
+        return (
+          <Products
+            key={selectedRestaurantId}
+            token={session.token}
+            restaurantId={selectedRestaurantId}
+          />
+        );
+
+
+
+      case "analytics":
+        return (
+          <Analytics
+            key={selectedRestaurantId}
+            token={session.token}
+            restaurantId={selectedRestaurantId}
+          />
+        );
+
+      case "staff":
+        return (
+          <Staff
+            key={selectedRestaurantId}
+            token={session.token}
+            restaurantId={selectedRestaurantId}
+          />
+        );
+
+      case "settings":
+        return (
+          <div className="space-y-10">
+            <BillingSettings token={session.token} />
+            <Settings />
+          </div>
+        );
+
+      default:
+        return <div className="rounded-xl border bg-white p-5">Page unavailable for this role.</div>;
     }
   };
 
   return (
     <div className="min-h-screen bg-[#f6f8fc] lg:flex">
       <Sidebar
-        page={page}
-        onNavigate={setPage}
+        page={activePage}
+        onNavigate={handleNavigate}
         mobileOpen={mobileOpen}
         onClose={() => setMobileOpen(false)}
+        restaurantRole={restaurantRole}
       />
 
       <div className="min-w-0 flex-1">
@@ -231,7 +441,8 @@ export default function App() {
 
             <div className="min-w-0">
               <div className="truncate text-sm font-bold text-slate-800 sm:text-base">
-                {t("header.restaurant")}
+                {selectedRestaurant?.name ??
+                  "Select Restaurant"}
               </div>
 
               <div className="hidden text-xs text-slate-500 sm:block">
@@ -255,7 +466,7 @@ export default function App() {
               className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 font-bold text-blue-700"
               aria-label={t("header.role")}
             >
-              A
+              {roleLabel.slice(0, 1).toUpperCase()}
             </div>
 
             <div className="hidden lg:block">
@@ -265,7 +476,7 @@ export default function App() {
               </div>
 
               <div className="text-[11px] text-slate-500">
-                {t("header.role")}
+                {roleLabel}
               </div>
             </div>
 
@@ -281,17 +492,56 @@ export default function App() {
           </div>
         </header>
 
-        <div className="border-b border-blue-100 bg-blue-50 px-4 py-2.5 text-xs font-medium text-blue-700 sm:px-6 lg:px-9">
-          <div className="flex items-center gap-2">
-            <ShieldCheck
-              size={15}
-              className="shrink-0"
+        <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6 lg:px-9">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <RestaurantSwitcher
+              restaurants={restaurants}
+              selectedRestaurantId={
+                selectedRestaurantId
+              }
+              loading={restaurantsLoading}
+              error={restaurantsError}
+              onChange={handleRestaurantChange}
+              onRetry={handleReloadRestaurants}
+            />
+
+            {selectedRestaurant && (
+              <span className="text-xs font-medium text-slate-500">
+                {selectedRestaurant.code}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800 sm:px-6 lg:px-9">
+          <div className="flex items-start gap-2">
+            <ShieldAlert
+              size={16}
+              className="mt-0.5 shrink-0"
               aria-hidden="true"
             />
 
-            <span>{t("tables.partialLive")}</span>
+            <span>
+              SaaS subscription setup is in progress.
+              Plans, trial periods and location attachment are available;
+              automatic upgrades and recurring payments are not connected yet.
+            </span>
           </div>
         </div>
+
+        {restaurantsError && (
+          <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-xs text-red-700 sm:px-6 lg:px-9">
+            {restaurantsError}
+          </div>
+        )}
+
+        {!restaurantsLoading &&
+          !restaurantsError &&
+          restaurants.length === 0 && (
+            <div className="border-b border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800 sm:px-6 lg:px-9">
+              No restaurants are linked to this account yet.
+            </div>
+          )}
 
         <main className="mx-auto w-full max-w-[1600px] min-w-0 px-4 py-6 sm:px-6 sm:py-8 lg:px-9 lg:py-9">
           {renderPage()}
