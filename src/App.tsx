@@ -24,6 +24,7 @@ import Settings from "./pages/Settings";
 import BillingSettings from "./pages/BillingSettings";
 import Login from "./pages/Login";
 import LandingPage from "./pages/LandingPage";
+import WorkspaceSetup from "./pages/WorkspaceSetup";
 
 import type { Page } from "./types";
 import { canOpenPage, localizedRestaurantRole, restaurantRoleOf } from "./auth/restaurantAccess";
@@ -111,6 +112,9 @@ export default function App() {
 
   const [showLanding, setShowLanding] = useState(true);
 
+  const [authMode, setAuthMode] =
+    useState<"login" | "register">("login");
+
   const [session, setSession] = useState<Session | null>(
     loadSavedSession
   );
@@ -127,7 +131,7 @@ export default function App() {
   const [
     restaurantsLoading,
     setRestaurantsLoading,
-  ] = useState(false);
+  ] = useState(Boolean(session));
 
   const [
     restaurantsError,
@@ -231,6 +235,7 @@ export default function App() {
 
     saveSession(authenticated);
 
+    setRestaurantsLoading(true);
     setSession(authenticated);
     setPage("dashboard");
     setMobileOpen(false);
@@ -267,13 +272,21 @@ export default function App() {
   };
 
   const handleReloadRestaurants = () => {
+    setRestaurantsLoading(true);
     setRestaurantsReloadKey((current) => current + 1);
   };
 
   if (!session && showLanding) {
     return (
       <LandingPage
-        onSignIn={() => setShowLanding(false)}
+        onSignIn={() => {
+          setAuthMode("login");
+          setShowLanding(false);
+        }}
+        onRegister={() => {
+          setAuthMode("register");
+          setShowLanding(false);
+        }}
       />
     );
   }
@@ -287,31 +300,29 @@ export default function App() {
           className="fixed left-4 top-4 z-50 flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
         >
           <ArrowLeft size={17} />
-          Back to Home
+          {t('onboarding.backHome')}
         </button>
 
-        <Login onLogin={handleLogin} />
-      </>
+        <Login
+          key={authMode}
+          onLogin={handleLogin}
+          initialMode={authMode}
+        />      </>
     );
   }
 
 
   if (!selectedRestaurantId) {
     return (
-      <div className="rounded-xl border bg-white p-6 text-center">
-        <h2 className="text-lg font-semibold">
-          Select a restaurant
-        </h2>
-        <p className="mt-2 text-sm text-slate-500">
-          {restaurantsLoading ? 'Checking restaurant access…' : restaurantsError ?? 'Ask the restaurant owner for an invitation, then refresh.'}
-        </p>
-        <div className="mt-4 flex justify-center gap-2">
-          <button type="button" onClick={handleReloadRestaurants}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Refresh</button>
-          <button type="button" onClick={handleLogout}
-            className="rounded-lg border px-4 py-2 text-sm font-medium">Sign out</button>
-        </div>
-      </div>
+      <WorkspaceSetup
+        key={session.user.id}
+        token={session.token}
+        email={session.user.email}
+        loading={restaurantsLoading}
+        accessError={Boolean(restaurantsError)}
+        onRefresh={handleReloadRestaurants}
+        onLogout={handleLogout}
+      />
     );
   }
 
@@ -351,6 +362,7 @@ export default function App() {
             key={selectedRestaurantId}
             token={session.token}
             restaurantId={selectedRestaurantId}
+            restaurantRole={restaurantRole}
           />
         );
 
@@ -361,6 +373,7 @@ export default function App() {
             key={selectedRestaurantId}
             token={session.token}
             restaurantId={selectedRestaurantId}
+            restaurantRole={restaurantRole}
           />
         );
 
@@ -407,8 +420,14 @@ export default function App() {
       case "settings":
         return (
           <div className="space-y-10">
-            <BillingSettings token={session.token} />
-            <Settings />
+            {restaurantRole === 'owner' && <BillingSettings token={session.token} />}
+            <Settings
+              key={`${session.user.id}:${selectedRestaurantId}`}
+              token={session.token}
+              restaurantId={selectedRestaurantId}
+              restaurantRole={restaurantRole}
+              onRestaurantAccessChanged={handleReloadRestaurants}
+            />
           </div>
         );
 

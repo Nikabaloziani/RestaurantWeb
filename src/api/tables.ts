@@ -29,9 +29,7 @@ type ApiTable = {
 };
 
 function prefix(): string {
-  if (import.meta.env.DEV) return ''; // Vite local proxy, same as Orders/Login.
-  if (!apiBaseUrl) throw new Error('tables.errorMissingUrl');
-  return apiBaseUrl.replace(/\/$/, '');
+  return apiBaseUrl;
 }
 
 function restaurantTablesPath(restaurantId: string): string {
@@ -112,7 +110,7 @@ async function request(
     });
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') throw err;
-    throw new Error('tables.errorNetwork');
+    throw new Error('tables.errorNetwork', { cause: err });
   }
 
   if (!response.ok) {

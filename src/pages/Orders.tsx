@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, CheckCircle2, CreditCard, Loader2, Plus, RefreshCw, Search } from 'lucide-react';
+import type { RestaurantRole } from '../auth/restaurantAccess';
 import CreateOrderDialog from './CreateOrderDialog';
 import RecordPaymentDialog from './RecordPaymentDialog';
 import { fetchPaymentRecords, type PaymentRecord } from '../api/payments';
+import { fetchTables } from '../api/tables';
 import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
 import {
@@ -23,11 +25,17 @@ const formatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2, min
 type OrdersProps = {
   token: string;
   restaurantId: string;
+  restaurantRole?: RestaurantRole;
 };
 
-export default function Orders({ token, restaurantId }: OrdersProps) {
+export default function Orders({ token, restaurantId, restaurantRole = 'unknown' }: OrdersProps) {
   const { t, i18n } = useTranslation();
+  const canWriteOrders = ['owner', 'manager', 'waiter'].includes(restaurantRole);
   const [orders, setOrders] = useState<LiveOrder[]>([]);
+  const [tableLookup, setTableLookup] = useState<{ token: string; restaurantId: string; numbers: Map<number, number>; failed: boolean } | null>(null);
+  const tableNumbers = useMemo(() => tableLookup?.token === token && tableLookup.restaurantId === restaurantId
+    ? tableLookup.numbers : new Map<number, number>(), [tableLookup, token, restaurantId]);
+  const tablesFailed = tableLookup?.token === token && tableLookup.restaurantId === restaurantId && tableLookup.failed;
   const [creating, setCreating] = useState(false);
   const [payingOrder, setPayingOrder] = useState<LiveOrder | null>(null);
   const [payments, setPayments] = useState<PaymentRecord[] | null>(null);
@@ -94,6 +102,24 @@ export default function Orders({ token, restaurantId }: OrdersProps) {
     return () => controller.abort();
   }, [token, restaurantId, hasRestaurant, reload]);
 
+  // Table IDs identify database records; tableNumber is the restaurant's visible number.
+  useEffect(() => {
+    const controller = new AbortController();
+    setTableLookup(null);
+    if (hasRestaurant) {
+      void fetchTables(token, restaurantId, controller.signal)
+        .then(tables => {
+          if (!controller.signal.aborted) setTableLookup({ token, restaurantId,
+            numbers: new Map(tables.map(table => [table.id, table.tableNumber])), failed: false });
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setTableLookup({ token, restaurantId,
+            numbers: new Map(), failed: true });
+        });
+    }
+    return () => controller.abort();
+  }, [token, restaurantId, hasRestaurant, reload]);
+
   const refresh = useCallback(() => {
     if (savingId !== null || !hasRestaurant) return;
     setNotice(null);
@@ -110,11 +136,11 @@ export default function Orders({ token, restaurantId }: OrdersProps) {
 
   const filtered = useMemo(() => orders.filter(order =>
     (status === 'all' || status === order.status) &&
-    `#${order.id} ${order.tableId}`.toLowerCase().includes(search.toLowerCase().trim())
-  ).sort((a, b) => (Date.parse(b.orderDate) || 0) - (Date.parse(a.orderDate) || 0)), [orders, status, search]);
+    `#${order.id} ${tableNumbers.has(order.tableId) ? `${t('common.table')} ${tableNumbers.get(order.tableId)}` : ''}`.toLowerCase().includes(search.toLowerCase().trim())
+  ).sort((a, b) => (Date.parse(b.orderDate) || 0) - (Date.parse(a.orderDate) || 0)), [orders, status, search, tableNumbers, t]);
 
   const save = async (order: LiveOrder) => {
-    if (!hasRestaurant) return;
+    if (!canWriteOrders || !hasRestaurant || savingId !== null) return;
     const nextStatus = drafts[order.id] ?? (order.status === 'unknown' ? 'pending' : order.status);
     if (order.status === 'cancelled' || order.status === 'paid' || order.status === 'unknown' || nextStatus === 'paid') return;
     if (order.status === nextStatus) return;
@@ -145,10 +171,10 @@ export default function Orders({ token, restaurantId }: OrdersProps) {
     {!hasRestaurant && <p role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Select a restaurant before managing orders.</p>}
     <PageHeader title={t('orders.title')} subtitle={t('orders.subtitle')}
       action={<div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => setCreating(true)} disabled={savingId !== null || !hasRestaurant}
+        {canWriteOrders && <button type="button" onClick={() => setCreating(true)} disabled={savingId !== null || !hasRestaurant}
           className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-40">
           <Plus size={17}/>{t('basket.newOrder')}
-        </button>
+        </button>}
         <button type="button" onClick={refresh} disabled={loading || savingId !== null || !hasRestaurant}
         className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
         <RefreshCw size={17} className={loading ? 'animate-spin' : ''}/>{t('orders.refresh')}
@@ -165,6 +191,10 @@ export default function Orders({ token, restaurantId }: OrdersProps) {
       <button type="button" onClick={refresh} className="mt-2 font-semibold underline">{t('orders.retry')}</button>
     </div>}
 
+    {tablesFailed && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+      {t('common.table')}: {t('common.unavailable')}.{' '}
+      <button type="button" onClick={refresh} disabled={loading || savingId !== null} className="font-semibold underline">{t('orders.retry')}</button>
+    </div>}
     {paymentError && <div role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('payments.unavailable')} ({paymentError})</div>}
 
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -193,11 +223,11 @@ export default function Orders({ token, restaurantId }: OrdersProps) {
           const next = drafts[order.id] ?? (order.status === 'unknown' ? 'pending' : order.status);
           const isSaving = savingId === order.id;
           const completedPayment = payments?.find(p => p.orderId === order.id && p.status === 'completed');
-          const lockedStatus = order.status === 'paid' || order.status === 'cancelled' || order.status === 'unknown';
+          const lockedStatus = !canWriteOrders || order.status === 'paid' || order.status === 'cancelled' || order.status === 'unknown';
           const itemsCount = order.orderItems.reduce((sum, item) => sum + item.quantity, 0);
           return <tr key={order.id} className="hover:bg-slate-50">
             <td className="px-5 py-4 font-bold text-slate-900">#{order.id}</td>
-            <td className="px-5 py-4 text-slate-600">{t('common.table')} {order.tableId}</td>
+            <td className="px-5 py-4 text-slate-600">{tableNumbers.has(order.tableId) ? `${t('common.table')} ${tableNumbers.get(order.tableId)}` : <span title={t('common.unavailable')}>—</span>}</td>
             <td className="px-5 py-4 text-slate-600">{itemsCount}</td>
             <td className="px-5 py-4 font-semibold text-slate-900">{formatter.format(order.totalAmount)} ₾</td>
             <td className="px-5 py-4"><StatusBadge status={order.status}/></td>
@@ -226,13 +256,13 @@ export default function Orders({ token, restaurantId }: OrdersProps) {
         })}</tbody>
       </table></div> : null}
     </section>
-    <p className="mt-3 text-xs text-slate-500">{t('orders.tableIdNote')}</p>
+
     {payingOrder && <RecordPaymentDialog token={token} restaurantId={restaurantId} order={payingOrder} onClose={() => setPayingOrder(null)} onPaid={id => {
       setPayingOrder(null);
       setNotice(t('payments.success', { id }));
       setReload(value => value + 1);
     }}/>} 
-    {creating && hasRestaurant && <CreateOrderDialog token={token} restaurantId={restaurantId} onClose={() => setCreating(false)} onCreated={orderId => {
+    {canWriteOrders && creating && hasRestaurant && <CreateOrderDialog token={token} restaurantId={restaurantId} onClose={() => setCreating(false)} onCreated={orderId => {
       setCreating(false);
       setStatus('all');
       setSearch('');

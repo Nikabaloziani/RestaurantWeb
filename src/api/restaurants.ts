@@ -1,5 +1,5 @@
 
-import { apiBaseUrl } from "./client";
+import { ApiError, apiBaseUrl } from "./client";
 
 export type RestaurantRole = number | string;
 
@@ -12,6 +12,19 @@ export type RestaurantSummary = {
   createdAt: string;
   role: RestaurantRole;
 };
+
+export async function createRestaurant(
+  token: string,
+  details: { organizationId: string; name: string; slug: string },
+): Promise<RestaurantSummary> {
+  const response = await fetch(getApiUrl('/api/Restaurant'), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(details),
+  });
+  if (!response.ok) throw new ApiError('Restaurant creation failed.', response.status);
+  return await response.json() as RestaurantSummary;
+}
 
 export function getRestaurantRoleName(
   role: RestaurantRole
@@ -35,17 +48,7 @@ export function getRestaurantRoleName(
 }
 
 function getApiUrl(path: string): string {
-  if (import.meta.env.DEV) {
-    return path;
-  }
-
-  const base = apiBaseUrl.replace(/\/+$/, "");
-
-  if (!base) {
-    throw new Error("VITE_API_URL is missing.");
-  }
-
-  return `${base}${path}`;
+  return `${apiBaseUrl}${path}`;
 }
 
 export async function getMyRestaurants(

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { BarChart3, CheckCircle2, ClipboardList, RefreshCw, TrendingUp, Wallet } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -12,13 +12,10 @@ export default function Analytics({ token, restaurantId }: { token: string; rest
   const [days, setDays] = useState<RangeDays>(7);
   const { snapshot, loading, refresh } = useInsights(token, false, restaurantId);
   const price = (amount: number) => formatGel(amount, locale);
-  // Memoize the period boundary on each render; changing range or refreshing recalculates.
-  const bounds = useMemo(() => {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    start.setDate(start.getDate() - (days - 1));
-    return start.getTime();
-  }, [days, snapshot]);
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  start.setDate(start.getDate() - (days - 1));
+  const bounds = start.getTime();
   const tomorrow = new Date();
   tomorrow.setHours(0, 0, 0, 0);
   tomorrow.setDate(tomorrow.getDate() + 1);

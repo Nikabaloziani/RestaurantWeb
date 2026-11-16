@@ -47,9 +47,7 @@ function tenantBase(restaurantId: string): string {
 }
 
 function prefix(): string {
-  if (import.meta.env.DEV) return '';
-  if (!apiBaseUrl) throw new Error('reservations.errorMissingUrl');
-  return apiBaseUrl.replace(/\/+$/, '');
+  return apiBaseUrl;
 }
 
 function number(value: unknown): number {
@@ -109,7 +107,7 @@ async function request(path: string, token: string, options: RequestInit = {}): 
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
-    throw new Error('reservations.errorNetwork');
+    throw new Error('reservations.errorNetwork', { cause: error });
   }
 
   if (!response.ok) {

@@ -31,6 +31,7 @@ export default function CreateOrderDialog({ token, restaurantId, onClose, onCrea
   const [warning, setWarning] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const operationLock = useRef(false);
+  const [checkoutUncertain, setCheckoutUncertain] = useState(false);
 
 
 useEffect(() => {
@@ -144,7 +145,7 @@ if (!restaurantId.trim()) {
   };
 
   const submitOrder = async () => {
-    if (operationLock.current || loading || busy || !selectedTable || !basket.length) return;
+    if (checkoutUncertain || operationLock.current || loading || busy || !selectedTable || !basket.length) return;
     if (!window.confirm(t('basket.confirmOrder', {
       table: selectedTable.tableNumber, count: itemCount, total: money(total),
     }))) return;
@@ -158,6 +159,7 @@ if (!restaurantId.trim()) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'basket.errorUnknown');
       // Could already exist if API response was lost AFTER it created the order.
+      setCheckoutUncertain(true);
       setWarning('basket.uncertainOrder');
       try { await refreshBasket(); } catch { /* Still unsafe to retry automatically. */ }
     } finally {
@@ -188,7 +190,7 @@ if (!restaurantId.trim()) {
 
         <div className="overflow-y-auto p-4 sm:p-6">
           {error && <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{errorText(error)}</div>}
-          {warning && <div role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle size={18} className="mt-0.5 shrink-0" />{t(warning)}</div>}
+          {(warning || checkoutUncertain) && <div role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle size={18} className="mt-0.5 shrink-0" />{t(checkoutUncertain ? 'basket.uncertainOrder' : warning!)}</div>}
           {loading ? <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="animate-spin" size={20} />{t('basket.loading')}</div>
             : !products.length && !categories.length && !tables.length && error ? null
               : <div className="grid gap-5 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)]">
@@ -275,7 +277,7 @@ if (!restaurantId.trim()) {
                       <span className="text-sm font-medium text-slate-600">{t('basket.total')}</span>
                       <span className="text-xl font-extrabold text-slate-900">{money(total)}</span>
                     </div>
-                    <button type="button" disabled={busy || !basket.length || !selectedTable || Boolean(warning)}
+                    <button type="button" disabled={checkoutUncertain || busy || !basket.length || !selectedTable || Boolean(warning)}
                       onClick={() => void submitOrder()}
                       className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">
                       {busy ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}{t('basket.placeOrder')}

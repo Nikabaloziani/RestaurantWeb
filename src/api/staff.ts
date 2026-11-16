@@ -1,4 +1,4 @@
-import { apiBaseUrl } from './client';
+import { apiBaseUrl, apiRequest } from './client';
 
 export type StaffRole = 2 | 3 | 4; // Manager, Waiter, Cashier
 export type StaffMember = {
@@ -59,7 +59,7 @@ export const revokeStaffInvitation = (token: string, restaurantId: string, invit
     method: 'DELETE',
   });
 export const acceptStaffInvite = (token: string, inviteToken: string) =>
-  staffRequest<StaffMember>(token, '/api/staff/invitations/accept', {
+  apiRequest<StaffMember>('/api/staff/invitations/accept', token, {
     method: 'POST', body: JSON.stringify({ token: inviteToken }),
   });
 export const changeStaffRole = (token: string, restaurantId: string, userId: string, role: StaffRole) =>

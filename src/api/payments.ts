@@ -19,9 +19,7 @@ export function paymentPath(restaurantId: string): string {
 }
 
 function apiRoot(): string {
-  if (import.meta.env.DEV) return '';
-  if (!apiBaseUrl) throw new Error('VITE_API_URL is missing');
-  return apiBaseUrl.replace(/\/+$/, '');
+  return apiBaseUrl;
 }
 
 async function request(path: string, token: string, options: RequestInit = {}): Promise<Response> {

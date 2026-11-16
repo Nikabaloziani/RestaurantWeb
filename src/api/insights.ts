@@ -42,9 +42,7 @@ function tenantPath(restaurantId: string, resource: 'reports' | 'payments'): str
 }
 
 function prefix(): string {
-  if (import.meta.env.DEV) return '';
-  if (!apiBaseUrl) throw new Error('VITE_API_URL is missing');
-  return apiBaseUrl.replace(/\/+$/, '');
+  return apiBaseUrl;
 }
 
 async function getJson(path: string, token: string, signal: AbortSignal): Promise<unknown> {
@@ -56,7 +54,7 @@ async function getJson(path: string, token: string, signal: AbortSignal): Promis
     });
   } catch (error) {
     if (signal.aborted) throw error;
-    throw new Error('Network error');
+    throw new Error('Network error', { cause: error });
   }
   if (!response.ok) {
     if (response.status === 401) throw new Error('Session expired (401)');

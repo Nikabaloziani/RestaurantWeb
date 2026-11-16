@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 type LandingPageProps = {
   onSignIn: () => void;
+  onRegister: () => void;
 };
 
 const features = [
@@ -52,6 +53,7 @@ function ActionButton({
 
 export default function LandingPage({
   onSignIn,
+  onRegister,
 }: LandingPageProps) {
   return (
     <div className="min-h-screen bg-[#08111f] text-white">
@@ -113,8 +115,8 @@ export default function LandingPage({
             </p>
 
             <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-              <ActionButton onClick={onSignIn}>
-                Open Dashboard →
+              <ActionButton onClick={onRegister}>
+                Start your free trial →
               </ActionButton>
 
               <a
@@ -246,8 +248,8 @@ export default function LandingPage({
               {[
                 {
                   step: "01",
-                  title: "Access your workspace",
-                  text: "Sign in to your restaurant dashboard.",
+                  title: "Create your workspace",
+                  text: "Create an account, then set up your business and first restaurant.",
                 },
                 {
                   step: "02",
@@ -290,8 +292,8 @@ export default function LandingPage({
             </p>
 
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <ActionButton onClick={onSignIn}>
-                Sign In →
+              <ActionButton onClick={onRegister}>
+                Start your free trial →
               </ActionButton>
 
               <a

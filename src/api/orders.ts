@@ -26,7 +26,6 @@ export type LiveOrder = {
   }>;
 };
 
-// Matches RestaurantDATA/Entities/OrderStatus.cs exactly.
 export const ORDER_STATUS_CODES = {
   pending: 1,
   preparing: 2,
@@ -49,10 +48,7 @@ export function orderPath(restaurantId: string): string {
 }
 
 function getApiPrefix(): string {
-  // Local Vite proxy handles /api; production needs backend CORS enabled.
-  if (import.meta.env.DEV) return '';
-  if (!apiBaseUrl) throw new Error('VITE_API_URL is missing in the deployment environment.');
-  return apiBaseUrl.replace(/\/$/, '');
+  return apiBaseUrl;
 }
 
 function normalizeStatus(input: unknown): LiveOrderStatus {

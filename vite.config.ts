@@ -1,28 +1,15 @@
-
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-
-//  server: {
-//   proxy: {
-//     "/api": {
-//       target: "https://restaurantapi-production-e850.up.railway.app",
-//       changeOrigin: true,
-//       secure: true,
-//     },
-//   },
-// },
-
-
-server: {
-  proxy: {
-    "/api": {
-      target: "http://localhost:5109",
-      changeOrigin: true,
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5109',
+        changeOrigin: true,
+      },
     },
   },
-},
 });

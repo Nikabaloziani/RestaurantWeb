@@ -6,6 +6,19 @@
  */
 export const apiBaseUrl = (import.meta.env.VITE_API_URL ?? '').trim().replace(/\/+$/, '');
 
+/** Structured status for callers; existing Error message handling still works. */
+export class ApiError extends Error {
+  status: number;
+  retryAfterSeconds?: number;
+
+  constructor(message: string, status: number, retryAfterSeconds?: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
 export async function apiRequest<T>(
   path: string,
   token?: string,
@@ -42,7 +55,15 @@ export async function apiRequest<T>(
     } catch {
       // Plain text error body is already available above.
     }
-    throw new Error(message ? `API ${response.status}: ${message}` : `API error ${response.status}`);
+    const retryAfter = response.headers.get('Retry-After');
+    const seconds = retryAfter === null ? NaN : /^\d+$/.test(retryAfter)
+      ? Number(retryAfter)
+      : Math.ceil((Date.parse(retryAfter) - Date.now()) / 1000);
+    throw new ApiError(
+      message ? `API ${response.status}: ${message}` : `API error ${response.status}`,
+      response.status,
+      Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined,
+    );
   }
 
   if (response.status === 204) return undefined as T;

@@ -19,9 +19,7 @@ type RawCategory = Record<string, unknown>;
 type RawProduct = Record<string, unknown>;
 
 function apiPrefix(): string {
-  if (import.meta.env.DEV) return '';
-  if (!apiBaseUrl) throw new Error('catalog.errorMissingUrl');
-  return apiBaseUrl.replace(/\/+$/, '');
+  return apiBaseUrl;
 }
 
 function catalogPath(restaurantId: string, resource: 'categories' | 'products'): string {
@@ -42,7 +40,7 @@ async function request(path: string, token: string, options: RequestInit = {}): 
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
-    throw new Error('catalog.errorNetwork');
+    throw new Error('catalog.errorNetwork', { cause: error });
   }
   if (!response.ok) {
     if (response.status === 401) throw new Error('catalog.errorUnauthorized');

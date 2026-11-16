@@ -1,19 +1,41 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, CreditCard, Loader2, Wallet, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { LiveOrder } from '../api/orders';
 import { getOrderForPayment, getPaymentForOrder, recordManualPayment } from '../api/payments';
 
-export default function RecordPaymentDialog({
-  token, restaurantId, order, onClose, onPaid,
-}: {
+type Props = {
   token: string;
   restaurantId: string;
   order: LiveOrder;
   onClose: () => void;
   onPaid: (id: number) => void;
-}) {
-  const { t } = useTranslation();
+};
+
+const cashLabels = {
+  ka: { received: 'მიღებული თანხა', change: 'ხურდა', invalid: 'შეიყვანე სწორი თანხა, მაქსიმუმ ორი ათწილადი ნიშნით.', insufficient: 'მიღებული თანხა გადასახდელ თანხაზე ნაკლებია.' },
+  en: { received: 'Cash received', change: 'Change', invalid: 'Enter a valid amount with up to two decimal places.', insufficient: 'Cash received is less than the amount due.' },
+  ru: { received: 'Получено наличными', change: 'Сдача', invalid: 'Введите корректную сумму, не более двух знаков после запятой.', insufficient: 'Полученная сумма меньше суммы к оплате.' },
+};
+
+function parseCash(text: string): number | null {
+  const normalized = text.trim().replace(',', '.');
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
+  const [whole, fraction = ''] = normalized.split('.');
+  const cents = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+  return Number.isSafeInteger(cents) ? cents : null;
+}
+
+export default function RecordPaymentDialog(props: Props) {
+  return <PaymentForm key={JSON.stringify([props.token, props.restaurantId, props.order.id])} {...props}/>;
+}
+
+function PaymentForm({ token, restaurantId, order, onClose, onPaid }: Props) {
+  const { t, i18n } = useTranslation();
+  const language = (i18n.resolvedLanguage ?? i18n.language ?? 'en').split('-')[0];
+  const labels = cashLabels[language as keyof typeof cashLabels] ?? cashLabels.en;
+  const [cashReceived, setCashReceived] = useState('');
+  const submitted = useRef(false);
   const [method, setMethod] = useState<'cash' | 'card'>('cash');
   const [confirmed, setConfirmed] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -26,6 +48,8 @@ export default function RecordPaymentDialog({
   useEffect(() => {
     const controller = new AbortController();
     setChecking(true);
+    setServerAmount(null);
+    setConfirmed(false);
     setBlockReason(null);
     setError(null);
     void Promise.all([
@@ -39,7 +63,11 @@ export default function RecordPaymentDialog({
         setBlockReason(t('payments.cancelled'));
       } else if (fresh.status === 'paid' || fresh.status === '5') {
         setBlockReason(t('payments.alreadyMarkedPaid'));
-      } else if (fresh.totalAmount <= 0) {
+      } else if (!Number.isFinite(fresh.totalAmount) || fresh.totalAmount <= 0 ||
+        !Number.isSafeInteger(Math.round(fresh.totalAmount * 100)) ||
+        Math.abs(fresh.totalAmount * 100 - Math.round(fresh.totalAmount * 100)) > 0.000001) {
+        setBlockReason(t('payments.invalidAmount'));
+      } else if (!['pending', 'preparing', 'ready', 'served', '1', '2', '3', '4'].includes(fresh.status)) {
         setBlockReason(t('payments.invalidAmount'));
       } else {
         setServerAmount(fresh.totalAmount);
@@ -52,9 +80,16 @@ export default function RecordPaymentDialog({
     return () => controller.abort();
   }, [order.id, token, restaurantId, t]);
 
+  const dueCents = serverAmount === null ? null : Math.round(serverAmount * 100);
+  const receivedCents = parseCash(cashReceived);
+  const cashValid = dueCents !== null && receivedCents !== null && receivedCents >= dueCents;
+  const cashError = cashReceived.trim() === '' ? null : receivedCents === null
+    ? labels.invalid : dueCents !== null && receivedCents < dueCents ? labels.insufficient : null;
+
   const pay = async () => {
-    if (sending || checking || blockReason || uncertain || !confirmed || serverAmount === null) return;
+    if (submitted.current || sending || checking || error || blockReason || uncertain || !confirmed || serverAmount === null || (method === 'cash' && !cashValid)) return;
     if (!window.confirm(t('payments.confirmSubmit', { id: order.id, amount: serverAmount.toFixed(2) }))) return;
+    submitted.current = true;
     setError(null);
     setSending(true);
     try {
@@ -71,7 +106,7 @@ export default function RecordPaymentDialog({
   };
 
   return <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget && !sending) onClose(); }}>
-    <section role="dialog" aria-modal="true" aria-labelledby="payment-dialog-title" className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+    <section role="dialog" aria-modal="true" aria-labelledby="payment-dialog-title" className="max-h-[90dvh] overflow-y-auto w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
       <div className="mb-5 flex items-start justify-between gap-3">
         <div><h2 id="payment-dialog-title" className="text-xl font-bold text-slate-900">{t('payments.title')} — #{order.id}</h2>
           <p className="mt-1 text-sm text-slate-500">{t('payments.subtitle')}</p></div>
@@ -92,12 +127,24 @@ export default function RecordPaymentDialog({
           <button type="button" onClick={() => { setMethod('card'); setConfirmed(false); }} disabled={checking || sending || !!blockReason || uncertain} className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-3 text-sm font-semibold ${method === 'card' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600'}`}><CreditCard size={17}/>{t('payments.card')}</button>
         </div>
       </div>
+      {method === 'cash' && <div className="mb-4 space-y-2">
+        <label htmlFor="cash-received" className="block text-sm font-semibold text-slate-700">{labels.received} (₾)</label>
+        <input id="cash-received" type="text" inputMode="decimal" autoComplete="off" maxLength={15}
+          value={cashReceived} onChange={e => { setCashReceived(e.target.value); setConfirmed(false); }}
+          disabled={checking || sending || !!blockReason || uncertain || !!error}
+          aria-invalid={!!cashError} aria-describedby={cashError ? 'cash-error' : undefined}
+          className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-blue-500"/>
+        {cashError && <p id="cash-error" role="alert" className="text-sm text-rose-700">{cashError}</p>}
+        <p role="status" className="rounded-xl bg-emerald-50 p-3 font-semibold text-emerald-900">
+          {labels.change}: {cashValid ? ((receivedCents! - dueCents!) / 100).toFixed(2) : '—'} ₾
+        </p>
+      </div>}
       <div className="mb-5 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">{t('payments.manualOnly')}</div>
       <label className="mb-5 flex cursor-pointer items-start gap-2 text-sm text-slate-700">
         <input type="checkbox" className="mt-1" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} disabled={checking || sending || !!blockReason || uncertain}/>
         <span>{method === 'card' ? t('payments.confirmCard') : t('payments.confirmCash')}</span>
       </label>
-      <button type="button" onClick={() => void pay()} disabled={!confirmed || checking || sending || !!blockReason || uncertain || serverAmount === null} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">
+      <button type="button" onClick={() => void pay()} disabled={!confirmed || checking || sending || !!error || !!blockReason || uncertain || serverAmount === null || (method === 'cash' && !cashValid)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">
         {sending ? <Loader2 size={17} className="animate-spin"/> : <CheckCircle2 size={17}/>} {t('payments.record')}
       </button>
     </section>

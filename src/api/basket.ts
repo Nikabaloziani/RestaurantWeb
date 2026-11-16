@@ -17,11 +17,7 @@ function tenantPath(restaurantId: string, resource: 'basket' | 'orders'): string
   return `/api/restaurants/${encodeURIComponent(restaurantId)}/${resource}`;
 }
 
-const apiPrefix = (): string => {
-  if (import.meta.env.DEV) return '';
-  if (!apiBaseUrl) throw new Error('basket.errorMissingUrl');
-  return apiBaseUrl.replace(/\/+$/, '');
-};
+const apiPrefix = (): string => apiBaseUrl;
 
 async function callApi(path: string, token: string, options: RequestInit = {}): Promise<Response> {
   let response: Response;
@@ -36,7 +32,7 @@ async function callApi(path: string, token: string, options: RequestInit = {}): 
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
-    throw new Error('basket.errorNetwork');
+    throw new Error('basket.errorNetwork', { cause: error });
   }
   if (!response.ok) {
     if (response.status === 401) throw new Error('basket.errorUnauthorized');

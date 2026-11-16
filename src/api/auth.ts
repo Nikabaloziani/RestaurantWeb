@@ -1,5 +1,5 @@
 
-import { apiBaseUrl } from "./client";
+import { ApiError, apiBaseUrl } from "./client";
 
 export type AuthUser = {
   id: string;
@@ -16,19 +16,30 @@ type LoginResult = {
   token: string;
 };
 
+export type RegistrationDetails = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+};
+
 function getApiUrl(path: string): string {
-  // Development uses the Vite /api proxy.
-  if (import.meta.env.DEV) {
-    return path;
+  return `${apiBaseUrl}${path}`;
+}
+
+export async function registerAccount(details: RegistrationDetails): Promise<void> {
+  const response = await fetch(getApiUrl('/api/Auth/register'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(details),
+  });
+
+  if (!response.ok) {
+    throw new ApiError('Registration failed.', response.status);
   }
 
-  const baseUrl = apiBaseUrl.replace(/\/+$/, "");
-
-  if (!baseUrl) {
-    throw new Error("VITE_API_URL is missing.");
-  }
-
-  return `${baseUrl}${path}`;
+  const result = (await response.json()) as Pick<LoginResult, 'isSuccess'>;
+  if (!result?.isSuccess) throw new Error('Registration could not be confirmed.');
 }
 
 function decodeJwtClaims(

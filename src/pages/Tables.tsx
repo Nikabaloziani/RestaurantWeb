@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { RestaurantRole } from '../auth/restaurantAccess';
 import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, Armchair, CheckCircle2, Edit3, Loader2, Plus, RefreshCw, Search, Table2, Trash2, X } from 'lucide-react';
@@ -87,12 +88,16 @@ function TableEditor({ initial, busy, onCancel, onSave, numbers, errorMessage }:
 export default function Tables({
   token,
   restaurantId,
+  restaurantRole = 'unknown',
 }: {
   token: string;
   restaurantId: string;
+  restaurantRole?: RestaurantRole;
 }) {
 
   const { t } = useTranslation();
+  const canManageTables = restaurantRole === 'owner' || restaurantRole === 'manager';
+  const canChangeOccupancy = canManageTables || restaurantRole === 'waiter';
   const [tables, setTables] = useState<LiveTable[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -137,7 +142,7 @@ export default function Tables({
   const refresh = () => { if (!saving && busyId === null) { setNotice(null); setReload(n => n + 1); } };
 
   const save = async (value: TableInput) => {
-    if (!editor || !restaurantId) return;
+    if (!canManageTables || !editor || !restaurantId) return;
     setSaving(true); setError(null); setNotice(null);
     try {
       if (editor === 'new') {
@@ -155,7 +160,7 @@ export default function Tables({
   };
 
   const occupancy = async (row: LiveTable) => {
-    if (!restaurantId || row.isOccupied === null || row.status === 'reserved') return;
+    if (!canChangeOccupancy || !restaurantId || row.isOccupied === null || row.status === 'reserved') return;
     const next = !row.isOccupied;
     if (!window.confirm(t('tables.confirmOccupancy', { number: row.tableNumber, status: t(`statuses.${next ? 'occupied' : 'available'}`) }))) return;
     setBusyId(row.id); setError(null); setNotice(null);
@@ -169,7 +174,7 @@ export default function Tables({
   };
 
   const remove = async (row: LiveTable) => {
-    if (!restaurantId) return;
+    if (!canManageTables || !restaurantId) return;
     if (!window.confirm(t('tables.confirmDelete', { number: row.tableNumber }))) return;
     setBusyId(row.id); setError(null); setNotice(null);
     try {
@@ -187,10 +192,10 @@ export default function Tables({
         className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
         <RefreshCw size={17} className={loading ? 'animate-spin' : ''}/>{t('tables.refresh')}
       </button>
-      <button type="button" onClick={() => { setError(null); setEditor('new'); }} disabled={!restaurantId || loading || busyId !== null || saving}
+      {canManageTables && <button type="button" onClick={() => { setError(null); setEditor('new'); }} disabled={!restaurantId || loading || busyId !== null || saving}
         className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">
         <Plus size={17}/>{t('tables.addTable')}
-      </button>
+      </button>}
     </div>}/>
 
     <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -241,24 +246,24 @@ export default function Tables({
             <span className="px-1">·</span>{row.zone ? t(`tables.zone${row.zone}`) : t('tables.zoneUnknown')}
           </p>
           <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-            <button type="button" disabled={working || saving || !extended} title={!extended ? t('tables.needsBackend') : undefined}
+            {canManageTables && <button type="button" disabled={working || saving || !extended} title={!extended ? t('tables.needsBackend') : undefined}
               onClick={() => setEditor(row)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
               <Edit3 size={14}/>{t('tables.editTable')}
-            </button>
-            <button type="button" disabled={working || saving || row.isOccupied === null || row.status === 'reserved'}
+            </button>}
+            {canChangeOccupancy && <button type="button" disabled={working || saving || row.isOccupied === null || row.status === 'reserved'}
               title={row.isOccupied === null ? t('tables.needsBackend') : undefined}
               onClick={() => { void occupancy(row); }} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 px-2.5 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">
               {working ? <Loader2 size={14} className="animate-spin"/> : null}{t(row.isOccupied ? 'tables.markFree' : 'tables.markOccupied')}
-            </button>
-            <button type="button" disabled={working || saving} onClick={() => { void remove(row); }}
+            </button>}
+            {canManageTables && <button type="button" disabled={working || saving} onClick={() => { void remove(row); }}
               className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-2.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40">
               <Trash2 size={14}/>{t('tables.delete')}
-            </button>
+            </button>}
           </div>
         </article>;
       })}</div> : null}
 
-    {editor !== null && <TableEditor key={editor === 'new' ? 'new' : editor.id}
+    {canManageTables && editor !== null && <TableEditor key={editor === 'new' ? 'new' : editor.id}
       initial={editor === 'new' ? undefined : editor}
       busy={saving} onCancel={() => { if (!saving) setEditor(null); }}
       numbers={tables.map(row => row.tableNumber)} errorMessage={error ? errorText(error) : null} onSave={save}/>}

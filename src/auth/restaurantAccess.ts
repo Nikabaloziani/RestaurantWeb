@@ -13,9 +13,9 @@ export function restaurantRoleOf(value: unknown): RestaurantRole {
 
 const permittedPages: Record<RestaurantRole, readonly Page[]> = {
   owner: ['dashboard', 'orders', 'tables', 'reservations', 'products', 'analytics', 'staff', 'settings'],
-  manager: ['dashboard', 'orders', 'tables', 'reservations', 'products', 'analytics'],
-  waiter: ['dashboard', 'orders', 'tables', 'reservations'],
-  cashier: ['dashboard', 'orders', 'tables'],
+  manager: ['dashboard', 'orders', 'tables', 'reservations', 'products', 'analytics', 'settings'],
+  waiter: ['dashboard', 'orders', 'tables', 'reservations', 'settings'],
+  cashier: ['dashboard', 'orders', 'tables', 'settings'],
   unknown: ['dashboard'],
 };
 
